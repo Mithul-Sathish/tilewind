@@ -40,7 +40,8 @@ const SEAT = [
 const STYLES = [
   { id:'quick',   name:'Fast and loose',    line:'Quick to call and careless with discards.' },
   { id:'careful', name:'Careful defenders', line:'They stop feeding you once you look close.' },
-  { id:'flush',   name:'Big-hand hunters',  line:'They collect one suit and defend hard.' }
+  { id:'flush',   name:'Big-hand hunters',  line:'They collect one suit and defend hard.' },
+  { id:'mixed',   name:'Three old hands',   line:'One defends, one hunts a big hand, one presses. All three read your discards.' }
 ];
 
 /* ranks */

@@ -12,11 +12,12 @@ function shuffle(a){ for (let i = a.length - 1; i > 0; i--){ const j = Math.floo
 
 function newMatch(opts = {}){
   token++;
-  const mode = opts.mode || 'play', diff = mode === 'daily' ? 1 : mode === 'tut' ? 0 : settings.difficulty;
+  const mode = opts.mode || 'play', teaching = mode === 'play' && profile.intro >= 1 && profile.intro <= 2;
+  const want = mode === 'daily' || mode === 'weekly' ? 1 : mode === 'tut' || teaching ? 0 : settings.difficulty, diff = Math.min(want, 2);
   S = {
     mode, diff,
     players: [0,1,2,3].map(i => ({
-      name: SEAT[i].name, style: i === 0 ? 'you' : STYLES[diff].id,
+      name: SEAT[i].name, style: i === 0 ? 'you' : want === 3 ? ['', 'careful', 'flush', 'quick'][i] : STYLES[diff].id,
       isHuman: i === 0 && !autotest, score: 1000, hand: [], melds: [], discards: [], flowers: [], drawnId: null
     })),
     dealer: 0, handNo: 0, totalHands: mode === 'play' ? settings.length : 1, wall: [], turn: 0,
@@ -41,7 +42,7 @@ function tutWall(){
   return w.concat(script, shuffle(rest.concat(flowers)));
 }
 function setupHand(){
-  S.rs = S.mode === 'daily' ? hashStr('daily' + dayKey()) | 0 : (Math.random() * 4294967296) | 0;
+  S.rs = S.mode === 'daily' ? hashStr('daily' + dayKey()) | 0 : S.mode === 'weekly' ? weeklySeed() : (Math.random() * 4294967296) | 0;
   S.wall = S.mode === 'tut' ? tutWall() : shuffle(allTiles());
   S.slot = new Map(S.wall.map((x, i) => [x.id, i])); S.slotKey = (S.slotKey || 0) + 1; S.reveal = null; S.groups = null; S.revealN = 0;
   for (const p of S.players){ p.hand = []; p.melds = []; p.discards = []; p.flowers = []; p.drawnId = null; }
@@ -53,7 +54,7 @@ function setupHand(){
   }
   S.roundWind = Math.floor(S.handNo / 4) % 4;
   S.lastDiscard = null; S.turn = S.dealer; S.ui = {}; S.selected = null; S.hintId = null;
-  S.fed = []; S.wasReady = false; S.say = null; S.callout = null; S.warned = null; S.tutStep = 0;
+  S.fed = []; S.wasReady = false; S.say = null; S.callout = null; S.warned = null; S.tutStep = 0; S.everReady = false; S.introShown = false;
 }
 
 /* ---------------- saving: a match is always exactly where you left it ---------------- */
@@ -84,6 +85,8 @@ function restore(r){
 function startGame(mode = 'play'){ if (mode === 'play') clearResume(); newMatch({ mode }); runMatch(); }
 function playOrResume(){ const r = peekResume(); if (!r) return startGame('play'); restore(r); runMatch(r.next ? null : r.loop); }
 
+/* a table for someone new: the same opponents, but three times in ten they throw back what they drew without thinking */
+const gentleTable = () => S.mode === 'play' && S.diff === 0 && (profile.kind === 'new' || (profile.intro >= 1 && profile.intro <= 3));
 async function runMatch(loop){
   const my = token;
   try {
@@ -100,6 +103,8 @@ async function runMatch(loop){
 
 async function playHand(st){
   let turn = st ? st.turn : S.dealer, needDraw = st ? st.needDraw : true, kongDraw = st ? st.kongDraw : false;
+  if (!st && !autotest && !profile.lookTip && innerWidth < innerHeight && S.mode !== 'tut' && !(profile.intro >= 1 && profile.intro <= 3)){ profile.lookTip = true; save(); say('Tap the cloth to lean in over the table. Tap again to sit back.', 5200); }
+  if (!st && !autotest) await introIdea(); // hands two to four open with one new idea, before anyone moves
   while (true){
     const p = S.players[turn];
     S.turn = turn;
@@ -120,12 +125,12 @@ async function playHand(st){
       if (S.mode === 'tut') action = { type:'discard', id: p.drawnId != null ? p.drawnId : p.hand[0].id };
       else if (so.win) action = { type:'win' };
       else if (so.kongs.length) action = { type:'kong', t:so.kongs[0] };
-      else action = { type:'discard', id: aiDiscard(turn) };
+      else action = { type:'discard', id: turn !== 0 && gentleTable() && p.drawnId != null && p.hand.some(x => x.id === p.drawnId) && rnd() < .3 ? p.drawnId : aiDiscard(turn) };
       await sleep(needDraw ? think * .55 : think);
     }
     if (action.type === 'win') return endWin(turn, true, { kongDraw, lastTile: S.wall.length === 0, winId: p.drawnId });
     if (action.type === 'kong'){
-      doSelfKong(turn, action.t); snd('kong'); haptic([14, 40, 14, 40, 20]); callStroke(turn, 'kong'); render();
+      doSelfKong(turn, action.t); snd('kong'); haptic([14, 40, 14, 40, 20]); callStroke(turn, 'kong'); V.thump(1, true); render();
       if (turn === 0){ questEvent({ kind:'kong' }); save(); }
       await sleep(620); needDraw = true; kongDraw = true; continue;
     }
@@ -147,7 +152,7 @@ async function playHand(st){
     }
     makeMeld(claim.pi, claim, d);
     if (turn === 0) S.fed.push({ by:claim.pi, t:d.t, type:claim.type });
-    snd(claim.type); haptic(claim.type === 'chow' ? [12, 50, 12] : [16, 50, 22]); callStroke(claim.pi, claim.type);
+    snd(claim.type); haptic(claim.type === 'chow' ? [12, 50, 12] : [16, 50, 22]); callStroke(claim.pi, claim.type); V.thump(claim.type === 'chow' ? .45 : claim.type === 'kong' ? 1 : .8, claim.type === 'kong');
     if (claim.pi === 0){ questEvent({ kind:'claim', type:claim.type }); if (claim.type === 'kong') questEvent({ kind:'kong' }); save(); }
     turn = claim.pi; needDraw = claim.type === 'kong'; kongDraw = needDraw;
     render(); await sleep(claim.pi === 0 ? 420 : 640);
@@ -244,7 +249,8 @@ function myWaits(){
 }
 function readyCheck(){
   const ready = myWaits().length > 0;
-  if (ready && !S.wasReady){ snd('ready'); haptic(8); if (!autotest){ questEvent({ kind:'ready' }); save(); } }
+  if (ready) S.everReady = true;
+  if (ready && !S.wasReady){ snd('ready'); lift(); haptic(8); if (!autotest){ questEvent({ kind:'ready' }); save(); } }
   S.wasReady = ready;
 }
 /* the one clear mistake the middle coach level speaks up about */
@@ -344,7 +350,9 @@ async function endWin(pi, selfDrawn, ctx){
   else if (pi === 0){
     profile.wins++; profile.winRun++; profile.bestFan = Math.max(profile.bestFan, res.fan);
     gain += 30 + res.fan * 10;
+    const had = Object.assign({}, profile.stamps);
     news.push(...stampWin(names), ...questEvent({ kind:'win', self:selfDrawn, concealed:res.concealed, fan:res.fan, names }));
+    S.rare = COLLECTION.filter(c => c.fan >= 3 && profile.stamps[c.id] && !had[c.id]);
   } else profile.winRun = 0;
   return finishHand({ pi, selfDrawn, ctx, res, val, pay, news, gain });
 }
@@ -360,7 +368,10 @@ async function finishHand(w){
   if (!autotest){
     profile.hands++; todaysQuests(); profile.quests.hands++;
     news.push(...questEvent({ kind:'hand', count: profile.quests.hands, paid: Math.max(0, -w.pay[0]) }));
-    if (S.mode === 'tut') profile.tut = true;
+    if (S.mode === 'tut'){ profile.tut = true; if (!profile.intro) profile.intro = 1; }
+    else if (S.mode === 'play' && profile.intro >= 1 && profile.intro <= 3 && S.introShown) profile.intro++;
+    if (S.mode === 'weekly') news.push(...weeklyResult(w));
+    if (S.mode !== 'tut') news.push(...sitting());
     if (S.mode === 'daily'){
       const k = dayKey(), got = w.pay[0], had = profile.daily[k];
       if (profile.dailyLast !== k){ profile.dailyLast = k; profile.dailyDays++; }
@@ -388,9 +399,11 @@ async function finishHand(w){
   const win = w.pi >= 0, mine = w.pi === 0, big = win && w.res.fan >= 3;
   let parts = { groups:[], rest:[] };
   if (win){ parts = revealGroups(w.pi, w.res); S.reveal = w.pi; S.groups = parts.groups; S.revealN = big ? 0 : parts.groups.length; }
+  if (S.mode !== 'tut'){ recordHand(w, parts); save(); }
   render();
   if (win){ V.pushTo(w.pi, big ? 1 : .55); snd(mine ? (big ? 'bigwin' : 'win') : 'lose'); haptic(mine ? [20, 60, 20, 60, 40] : 12); callStroke(w.pi, 'win', big ? 1500 : 1000); }
   await sleep(win ? 520 : 400);
+  if (mine && S.rare && S.rare.length){ const rr = S.rare; S.rare = null; for (const c of rr) await rareReveal(c); }
   return resultSlip(w, parts, { last, big, place, order, dailyLine });
 }
 
@@ -418,13 +431,15 @@ function resultSlip(w, parts, x){
   if (x.last && S.totalHands > 1) stand = `<div class="stand"><div class="sth">${['', 'First place', 'Second place', 'Third place', 'Fourth place'][x.place]}</div>${x.order.map((o, k) => `<div class="${o.i === 0 ? 'me' : ''}"><span>${k + 1}</span><span><i style="background:${SEAT[o.i].lac}"></i>${o.p.name}</span><b>${o.p.score}</b></div>`).join('')}</div>`;
   const news = (x.dailyLine ? [x.dailyLine] : []).concat(w.news).map(n => `<div>${n}</div>`).join('');
   let btns;
-  if (S.mode === 'tut') btns = `<button class="tbtn prime big" data-r="again">Play a hand</button>`;
+  if (S.mode === 'tut' && !profile.kind) btns = `<div class="kinds"><div class="kq">How would you like to play from here?</div>${KINDS.map((k, i) => `<button class="tbtn kind ${i === 0 ? 'prime' : ''}" data-kind="${k.id}"><b>${k.name}</b><small>${k.line}</small></button>`).join('')}</div>`;
+  else if (S.mode === 'tut') btns = `<button class="tbtn prime big" data-r="again">Play a hand</button>`;
   else if (!x.last) btns = `<button class="tbtn prime big" data-r="next">Next hand</button>`;
-  else btns = `<button class="tbtn" data-r="home">Home</button><button class="tbtn prime big" data-r="again">${S.mode === 'daily' ? 'Play it again' : S.totalHands > 1 ? 'New match' : 'Another hand'}</button>`;
+  else btns = `<button class="tbtn" data-r="home">Home</button><button class="tbtn prime big" data-r="again">${S.mode === 'daily' || S.mode === 'weekly' ? 'Play it again' : S.totalHands > 1 ? 'New match' : 'Another hand'}</button>`;
+  if (S.mode === 'daily') btns = `<button class="tbtn" data-share>Result card</button>` + btns;
   const tutLine = S.mode === 'tut' && mine ? '<div class="news"><div>That was a real hand, scored by the real rules. Tap any line above to see why it counts.</div></div>' : '';
   const html = `<div class="slipwrap"><div class="slip paper ${mine ? 'mine' : ''}" role="dialog" aria-label="${title}">
     <div class="shead"><span class="seal" style="background:${win ? SEAT[w.pi].lac : '#5c4c37'}">${win ? '和' : '日'}</span><div><h2>${title}</h2><p class="lead">${lead}</p></div></div>
-    <div class="sbody">${win ? `<div class="lines">${lines.join('')}${tot}</div>` : ''}<div class="why" id="why"></div>
+    <div class="sbody">${nearMiss(w)}${win ? `<div class="lines">${lines.join('')}${tot}</div>` : ''}<div class="why" id="why"></div>
     ${pays}${fed}${stand}${news ? `<div class="news">${news}</div>` : ''}${tutLine}</div>
     <div class="sfoot">${rank}<div class="sbtns">${btns}</div></div></div></div>`;
   return new Promise((res, rej) => {
@@ -434,6 +449,8 @@ function resultSlip(w, parts, x){
     let alive = true;
     const finish = () => { slip.querySelectorAll('.wait').forEach(e => e.classList.remove('wait')); if (win){ $('#rFan').textContent = w.res.fan; $('#rPts').textContent = w.val; S.revealN = parts.groups.length; render(); } };
     slip.addEventListener('click', e => {
+      const kb = e.target.closest('[data-kind]'); if (kb){ setKind(kb.dataset.kind); alive = false; root.innerHTML = ''; if (my !== token) rej(ABORT); else res('again'); return; }
+      if (e.target.closest('[data-share]')){ shareCard(w); return; }
       const b = e.target.closest('[data-r]');
       if (b){ alive = false; root.innerHTML = ''; if (my !== token) rej(ABORT); else res(b.dataset.r); return; }
       const l = e.target.closest('[data-why]'); if (l){ $('#why').textContent = l.dataset.why; slip.querySelectorAll('.ln.on').forEach(o => o.classList.remove('on')); l.classList.add('on'); }

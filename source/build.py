@@ -24,23 +24,26 @@ lessons=rep(lessons,"<li><b>Leave the coach on.</b> It marks a suggested discard
 lessons=rep(lessons,"You'll learn the rest faster by playing, with the coach by your side.","The rest comes faster by playing.")
 lessons=lessons.replace(" · "," · ")
 src=lambda f: open('src/'+f).read()
-js = "(() => {\n'use strict';\nif (!window.THREE){ document.getElementById('boot').textContent = 'The 3D table could not load.'; return; }\n"
+js = "(() => {\n'use strict';\nif (!window.THREE){ document.getElementById('bootMsg').textContent = 'The 3D table could not load.'; return; }\n"
 js += "const FONT_CSS = " + repr(open('build/fonts.css').read()) + ";\n"
-js += names + src('meta.js') + src('faces.js') + src('sound.js') + core + src('view3d.js') + src('flow.js') + src('app.js') + lessons
+js += names + src('meta.js') + src('faces.js') + src('sound.js') + core + src('view3d.js') + src('flow.js') + src('app.js') + src('more.js') + lessons
 js += """
 /* ---------------- boot ---------------- */
 (async () => {
   const good = await V.init($('#stage'));
-  if (!good){ $('#boot').textContent = 'This device could not start the 3D table.'; return; }
-  V.applyTheme(themeOf(profile.theme));
+  if (!good){ $('#bootMsg').textContent = 'This device could not start the 3D table.'; return; }
+  V.applyTheme(themeOf(profile.theme)); applyCos();
+  const seasonLine = seasonTick();
   if (profile.tut){ renderHome(); showScreen('home'); setTimeout(ensureTiles, 250); }
   else { ensureTiles(); showScreen('home'); startGame('tut'); }
-  $('#boot').remove();
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const bt = $('#boot'); bt.classList.add('gone'); setTimeout(() => bt.remove(), 700);
   window.TW_ready = true;
+  if (seasonLine) setTimeout(() => toast('A new season', seasonLine), 900);
 })();
 window.TW_state = () => S;
 window.TW_themes = THEMES;
-window.TW_api = { startGame, playOrResume, goHome, openBook, profile, settings, save, endWin, render, paintWin, callStroke, V };
+window.TW_api = { setKind, weeklyNow, shareCard, rareReveal, COLLECTION, startGame, playOrResume, goHome, openBook, profile, settings, save, endWin, render, paintWin, callStroke, V };
 window.TW_autotest = (matches = 3) => new Promise(async res => {
   autotest = true; let errors = 0;
   for (let m = 0; m < matches; m++){

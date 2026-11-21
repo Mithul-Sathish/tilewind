@@ -9,7 +9,9 @@ const T3 = window.THREE;
 const TW = 1, TL = 1.33, TH = 0.7, DEG = Math.PI / 180;
 const K_SPRING = 300, C_DAMP = 26;
 let renderer = null, canvas = null, W = 1, H = 1, handH = 0, stripH = 0, rows = 1, ok = false, mode = 'none';
-let slowUntil = 0, quality = 0, qN = 0, qSum = 0, qSkip = 40, pxCap = 2, theme = null;
+let slowUntil = 0, tier = 1, lowStep = 0, qN = 0, qSum = 0, qSkip = 40, pxCap = 2, theme = null;
+const par = { x: 0, z: 0, tx: 0, tz: 0 };
+let cos = { back: null, lamp: null, tint: 0xffffff, light: false }, settle = 0, settleV = 0, flick = 0;
 let running = false, lastT = 0, needFrame = false;
 const scene = new T3.Scene(), hscene = new T3.Scene();
 const cam = new T3.PerspectiveCamera(28, 1, 1, 600), hcam = new T3.PerspectiveCamera(22, 1, .5, 400);
@@ -76,11 +78,31 @@ function feltNormal(){
   }, false);
 }
 function feltColor(){
-  return canvasTex(512, 512, (ctx, w, h) => {
-    const img = ctx.createImageData(w, h), d = img.data;
-    for (let i = 0; i < w * h; i++){ const v = 236 + Math.random() * 19; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255; }
+  // fine fibre noise, plus slow patches where the nap has been brushed one way or the other
+  return canvasTex(1024, 1024, (ctx, w, h) => {
+    const img = ctx.createImageData(w, h), d = img.data, N = 14, lo = new Float32Array((N + 1) * (N + 1));
+    for (let i = 0; i < lo.length; i++) lo[i] = Math.random();
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+      const gx = x / w * N, gy = y / h * N, x0 = Math.floor(gx), y0 = Math.floor(gy); let fx = gx - x0, fy = gy - y0; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+      const a = lo[y0 * (N + 1) + x0], b = lo[y0 * (N + 1) + x0 + 1], c = lo[(y0 + 1) * (N + 1) + x0], e = lo[(y0 + 1) * (N + 1) + x0 + 1];
+      const patch = (a + (b - a) * fx) * (1 - fy) + (c + (e - c) * fx) * fy;
+      const v = 214 + patch * 24 + Math.random() * 17, i = (y * w + x) * 4; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+    }
     ctx.putImageData(img, 0, 0);
   });
+}
+function scratchTex(){
+  // roughness only: hairline scratches and handling wear that show up in the highlight and nowhere else
+  return canvasTex(512, 512, (ctx, w, h) => {
+    const img = ctx.createImageData(w, h), d = img.data;
+    for (let i = 0; i < w * h; i++){ const v = 226 + Math.random() * 22; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255; }
+    ctx.putImageData(img, 0, 0);
+    for (let n = 0; n < 260; n++){
+      const x = Math.random() * w, y = Math.random() * h, a = Math.random() * 6.28, L = 12 + Math.random() * 70, v = Math.random() < .5 ? 255 : 170 + Math.random() * 40;
+      ctx.strokeStyle = `rgba(${v},${v},${v},${.25 + Math.random() * .45})`; ctx.lineWidth = .5 + Math.random() * .7;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + Math.cos(a) * L * .5 + (Math.random() - .5) * 8, y + Math.sin(a) * L * .5 + (Math.random() - .5) * 8, x + Math.cos(a) * L, y + Math.sin(a) * L); ctx.stroke();
+    }
+  }, false);
 }
 function woodTex(base = [64, 38, 22]){
   return canvasTex(1024, 512, (ctx, w, h) => {
@@ -97,9 +119,11 @@ function woodTex(base = [64, 38, 22]){
   });
 }
 function shadowTex(){
-  return canvasTex(128, 128, (ctx, w, h) => {
-    ctx.filter = 'blur(9px)'; ctx.fillStyle = 'rgba(0,0,0,1)';
-    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(30, 26, 68, 76, 10) : ctx.rect(30, 26, 68, 76); ctx.fill();
+  // contact shadow: a wide soft falloff, and a tight dark line right where the tile meets the felt
+  return canvasTex(256, 256, (ctx, w, h) => {
+    const box = (x, y, bw, bh, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, bw, bh, r) : ctx.rect(x, y, bw, bh); ctx.fill(); };
+    ctx.filter = 'blur(20px)'; ctx.fillStyle = 'rgba(0,0,0,.62)'; box(58, 50, 140, 156, 18);
+    ctx.filter = 'blur(6px)'; ctx.fillStyle = 'rgba(0,0,0,.6)'; box(55, 47, 146, 162, 12);
   }, false);
 }
 
@@ -108,6 +132,7 @@ let atlasTex, bumpTex, CW = 512, CH = 680, COLS = 8, AW, AH;
 async function buildAtlas(){
   const small = Math.min(innerWidth, innerHeight) < 560 || renderer.capabilities.maxTextureSize < 4096;
   if (small){ CW = 256; CH = 340; }
+  else if (tier === 2 && renderer.capabilities.maxTextureSize >= 8192){ CW = 768; CH = 1020; }
   AW = CW * COLS; AH = CH * 6;
   const c = document.createElement('canvas'); c.width = AW; c.height = AH;
   const g = c.getContext('2d'); g.fillStyle = IVORY; g.fillRect(0, 0, AW, AH);
@@ -148,17 +173,18 @@ function faceGeo(t){
 /* ---------- materials ---------- */
 const M = {};
 function makeMaterials(){
-  M.ivory = new T3.MeshPhysicalMaterial({ color: 0xEFE6D2, roughness: .35, clearcoat: .5, clearcoatRoughness: .3, envMapIntensity: .55, specularIntensity: .55 });
-  M.jade = new T3.MeshPhysicalMaterial({ color: 0x2C6B4F, roughness: .3, clearcoat: .8, clearcoatRoughness: .22, envMapIntensity: .7 });
+  const sc = scratchTex(); sc.repeat.set(3, 3);
+  M.ivory = new T3.MeshPhysicalMaterial({ color: 0xEFE6D2, roughness: .42, roughnessMap: sc, clearcoat: .38, clearcoatRoughness: .26, clearcoatRoughnessMap: sc, envMapIntensity: .6, specularIntensity: .55, sheen: .35, sheenColor: new T3.Color(0xE8B98A), sheenRoughness: .5 });
+  M.jade = new T3.MeshPhysicalMaterial({ color: 0x2C6B4F, roughness: .36, roughnessMap: sc, clearcoat: .8, clearcoatRoughness: .2, clearcoatRoughnessMap: sc, envMapIntensity: .8 });
   M.seam = new T3.MeshStandardMaterial({ color: 0x1a1d18, roughness: .85 });
   M.face = new T3.MeshPhysicalMaterial({ color: 0xffffff, map: atlasTex, bumpMap: bumpTex, bumpScale: 2.2, roughness: .35, clearcoat: .5, clearcoatRoughness: .3, envMapIntensity: .55, specularIntensity: .55, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   M.rim = new T3.MeshBasicMaterial({ color: 0xD9AE55, side: T3.BackSide });
   M.rimSoft = new T3.MeshBasicMaterial({ color: 0xC9A24A, side: T3.BackSide, transparent: true, opacity: .75 });
-  M.shadow = new T3.MeshBasicMaterial({ map: shadowTex(), color: 0x000000, transparent: true, depthWrite: false, opacity: .42 });
+  M.shadow = new T3.MeshBasicMaterial({ map: shadowTex(), color: 0x000000, transparent: true, depthWrite: false, opacity: .5 });
   M.shadow.map.wrapS = M.shadow.map.wrapT = T3.ClampToEdgeWrapping;
-  const fn = feltNormal(); fn.repeat.set(9, 9);
-  const fc = feltColor(); fc.repeat.set(5, 5);
-  M.felt = new T3.MeshPhysicalMaterial({ color: 0x1D4636, map: fc, roughness: 1, sheen: 1, sheenColor: new T3.Color(0x5a9a78), sheenRoughness: .55, normalMap: fn, normalScale: new T3.Vector2(.45, .45), envMapIntensity: .12 });
+  const fn = feltNormal(); fn.repeat.set(7, 7);
+  const fc = feltColor(); fc.repeat.set(1, 1);
+  M.felt = new T3.MeshPhysicalMaterial({ color: 0x1D4636, map: fc, roughness: 1, sheen: 1, sheenColor: new T3.Color(0x5a9a78), sheenRoughness: .48, normalMap: fn, normalScale: new T3.Vector2(.7, .7), envMapIntensity: .12 });
   const wood = woodTex([74, 44, 26]); wood.repeat.set(.4, .5); woodDark = wood;
   woodLight = woodTex([150, 108, 66]); woodLight.repeat.set(.4, .5);
   M.bone = new T3.MeshPhysicalMaterial({ color: 0xE9DFC8, roughness: .45, clearcoat: .3, clearcoatRoughness: .4, envMapIntensity: .4 });
@@ -166,9 +192,10 @@ function makeMaterials(){
   const wood2 = woodTex([70, 42, 24]); wood2.repeat.set(.07, .07);
   M.walnutTop = new T3.MeshPhysicalMaterial({ color: 0xffffff, map: wood2, roughness: .5, clearcoat: .35, clearcoatRoughness: .4, envMapIntensity: .3 });
   const rackWood = woodTex([118, 74, 42]); rackWood.repeat.set(.5, 1.4);
+  const rackPale = woodTex([196, 158, 108]); rackPale.repeat.set(.5, 1.4); M.rackMaps = { dark: rackWood, light: rackPale };
   M.rack = new T3.MeshPhysicalMaterial({ color: 0xffffff, map: rackWood, roughness: .4, clearcoat: .6, clearcoatRoughness: .3, envMapIntensity: .45 });
-  M.brass = new T3.MeshStandardMaterial({ color: 0xC9A24A, metalness: .85, roughness: .35, envMapIntensity: 1 });
-  const fl = woodTex([26, 20, 16]); fl.repeat.set(5, 30); M.floor = new T3.MeshStandardMaterial({ color: 0xffffff, map: fl, roughness: .9 });
+  M.brass = new T3.MeshStandardMaterial({ color: 0xC9A24A, metalness: .9, roughness: .42, roughnessMap: sc, envMapIntensity: 1.1 });
+  const fl = woodTex([26, 20, 16]); fl.repeat.set(12, 26); M.floor = new T3.MeshStandardMaterial({ color: 0xffffff, map: fl, roughness: .9 });
 }
 const BODY_MATS = () => [M.ivory, M.jade, M.seam];
 let woodDark, woodLight;
@@ -192,11 +219,11 @@ const lightsFor = (sc, isHand) => {
   const key = new T3.SpotLight(0xFFE2B8, isHand ? 6 : 6.6, 0, isHand ? .7 : .5, 1, 0);
   if (isHand){ key.position.set(-7, 10, 16); key.target.position.set(0, 0, 0); }
   else { key.position.set(-11, 36, 13); key.target.position.set(1.2, 0, -.8); }
-  key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0003; key.shadow.normalBias = .02;
+  key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0003; key.shadow.normalBias = .02; key.shadow.blurSamples = 16;
   key.shadow.camera.near = isHand ? 4 : 18; key.shadow.camera.far = isHand ? 40 : 75; key.shadow.radius = 4;
   sc.add(key, key.target);
-  const hemi = new T3.HemisphereLight(0xb9cad8, 0x2c4a3a, isHand ? .6 : .75); sc.add(hemi); if (!isHand) hemiMain = hemi;
-  const fill = new T3.DirectionalLight(0xa9bccd, isHand ? .35 : .22); fill.position.set(10, 8, 14); sc.add(fill);
+  const hemi = new T3.HemisphereLight(0xb9cad8, 0x2c4a3a, isHand ? .75 : 1.0); sc.add(hemi); if (!isHand) hemiMain = hemi;
+  const fill = new T3.DirectionalLight(0xa9bccd, isHand ? .4 : .3); fill.position.set(10, 8, 14); sc.add(fill);
   return key;
 };
 function buildTable(){
@@ -209,6 +236,8 @@ function buildTable(){
   for (const [geo, x, z, ry] of [[longBar, 0, 13.95, 0], [longBar, 0, -13.95, Math.PI], [sideBar, 13.95, 0, Math.PI / 2], [sideBar, -13.95, 0, -Math.PI / 2]]){
     const m = new T3.Mesh(geo, M.walnut); m.position.set(x, .36, z); m.rotation.y = ry; m.castShadow = m.receiveShadow = true; rail.add(m);
   }
+  // brass corner caps where the boards meet
+  for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]){ const m = new T3.Mesh(roundedBox(1.64, .9, 1.64, 2, .2), M.brass); m.position.set(x * 13.95, .37, z * 13.95); m.castShadow = m.receiveShadow = true; rail.add(m); }
   scene.add(rail);
   floor = new T3.Mesh(new T3.PlaneGeometry(400, 400), M.floor); floor.rotation.x = -Math.PI / 2; floor.position.y = -3.5; floor.receiveShadow = true; scene.add(floor);
   // the table's apron, so the rail does not float
@@ -218,21 +247,21 @@ function buildTable(){
   // score plaques: lacquer on brass, one on the rail in front of each seat
   for (let s = 0; s < 4; s++){
     const g = new T3.Group(), [x, z] = seatXZ(s, 0, 13.95);
-    const base = new T3.Mesh(roundedBox(8.6, .14, 1.44, 2, .05), M.brass); base.castShadow = true; base.receiveShadow = true;
+    const base = new T3.Mesh(roundedBox(8.6, .24, 1.44, 2, .08), M.brass); base.castShadow = true; base.receiveShadow = true;
     const c = document.createElement('canvas'); c.width = 1024; c.height = 160;
     const tex = new T3.CanvasTexture(c); tex.colorSpace = T3.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     const mat = new T3.MeshPhysicalMaterial({ map: tex, roughness: .5, clearcoat: .6, clearcoatRoughness: .45, envMapIntensity: .35, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0 });
-    const top = new T3.Mesh(new T3.PlaneGeometry(8.44, 1.3), mat); top.rotation.x = -Math.PI / 2; top.position.y = .072; top.receiveShadow = true;
+    const top = new T3.Mesh(new T3.PlaneGeometry(8.44, 1.3), mat); top.rotation.x = -Math.PI / 2; top.position.y = .122; top.receiveShadow = true;
     g.add(base, top); g.position.set(x, .83, z); g.rotation.y = (s === 2 ? 0 : s * 90) * DEG; g.visible = false; scene.add(g);
     plaques.push({ g, base, top, c, tex, mat, key: '' });
   }
   // the round marker: a bone disc in a brass ring at the centre of the table
   {
     const g = new T3.Group();
-    const ring = new T3.Mesh(new T3.CylinderGeometry(2.22, 2.26, .16, 64), M.brass); ring.position.y = .08; ring.castShadow = true; ring.receiveShadow = true;
+    const ring = new T3.Mesh(new T3.CylinderGeometry(2.2, 2.28, .3, 72), M.brass); ring.position.y = .15; ring.castShadow = true; ring.receiveShadow = true;
     const c = document.createElement('canvas'); c.width = c.height = 512;
     const tex = new T3.CanvasTexture(c); tex.colorSpace = T3.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    const top = new T3.Mesh(new T3.CircleGeometry(2.08, 64), new T3.MeshPhysicalMaterial({ map: tex, roughness: .4, clearcoat: .4, clearcoatRoughness: .35, envMapIntensity: .4 })); top.rotation.x = -Math.PI / 2; top.position.y = .165; top.receiveShadow = true;
+    const top = new T3.Mesh(new T3.CircleGeometry(2.08, 64), new T3.MeshPhysicalMaterial({ map: tex, roughness: .4, clearcoat: .4, clearcoatRoughness: .35, envMapIntensity: .4 })); top.rotation.x = -Math.PI / 2; top.position.y = .302; top.receiveShadow = true;
     g.add(ring, top); g.visible = false; scene.add(g); marker = { g, top, c, tex, key: '' };
     const dc = document.createElement('canvas'); dc.width = dc.height = 128; const dg = dc.getContext('2d');
     dg.fillStyle = '#E9DFC8'; dg.fillRect(0, 0, 128, 128); dg.fillStyle = '#B3261E'; dg.font = "84px TWbrush"; dg.textAlign = 'center'; dg.textBaseline = 'middle'; dg.fillText('莊', 64, 68);
@@ -319,13 +348,13 @@ function handTile(id){
 function seatXZ(s, u, v){ const a = s * 90 * DEG; return [u * Math.cos(a) + v * Math.sin(a), -u * Math.sin(a) + v * Math.cos(a)]; }
 function pose(s, u, v, y, rx, yawExtra = 0, sc = 1, jit = 0){
   const [x, z] = seatXZ(s, u, v);
-  return { x: x + (rand(jit * 3.1) - .5) * .02, y, z: z + (rand(jit * 5.7) - .5) * .02, rx, ry: s * 90 * DEG + yawExtra + (rand(jit * 1.3) - .5) * .8 * DEG, rz: 0, sc };
+  return { x: x + (rand(jit * 3.1) - .5) * .028, y, z: z + (rand(jit * 5.7) - .5) * .05, rx, ry: s * 90 * DEG + yawExtra + (rand(jit * 1.3) - .5) * 2.2 * DEG, rz: 0, sc };
 }
 const LIE = TH / 2, STAND = TL / 2, UP = 90 * DEG, DOWN = 180 * DEG;
 const SIDE_ORDER = [0, 3, 2, 1]; // walls clockwise from yours: you, left, top, right
 function wallPose(g, level, jit){
   const side = SIDE_ORDER[Math.floor(g / 18)], j = g % 18;
-  return pose(side, 8.67 - j * 1.02 + 1.1, 9.6, LIE + level * (TH + .004), DOWN, 0, 1, jit);
+  return pose(side, 8.76 - j * 1.03 + 1.1, 9.6, LIE + level * (TH + .004), DOWN, 0, 1, jit);
 }
 function slotStack(k, dealer, handNo){
   const g0 = SIDE_ORDER.indexOf(dealer) * 18 + 3 + (handNo * 5) % 11;
@@ -417,10 +446,11 @@ function step(o, dt){
 
 /* ---------- camera ---------- */
 let pushZoom = .14, camR = 70, push = 0, pushV = 0, pushT = 0, pushX = 0, pushZ = 0;
-const TILT = 20 * DEG;
-function placeCam(c, R, tx, tz){ c.position.set(tx, R * Math.cos(TILT), tz + R * Math.sin(TILT)); c.lookAt(tx, 0, tz); c.updateMatrixWorld(); }
+let TILT = 20 * DEG;
+function placeCam(c, R, tx, tz, ox = 0, oz = 0){ c.position.set(tx + ox, R * Math.cos(TILT), tz + R * Math.sin(TILT) + oz); c.lookAt(tx, 0, tz); c.updateMatrixWorld(); }
 function fitCamera(){
   const vh = Math.max(1, H - handH - stripH), aspect = W / vh, portrait = aspect < .9;
+  TILT = (portrait ? 15 : aspect > 1.9 ? 27 : 21) * DEG; // tall phone: nearly overhead so tiles stay large; wide: lower, so the table fills the width
   const test = new T3.PerspectiveCamera(28, aspect, 1, 600);
   const ext = portrait ? 14.5 : 14.7, frac = portrait ? .99 : (mode === 'game' ? .97 : .8);
   const pts = []; for (const x of [-ext, ext]) for (const z of [-ext, ext]) pts.push(new T3.Vector3(x, .8, z));
@@ -436,7 +466,7 @@ function fitCamera(){
 }
 function updateCam(){
   const R = camR * (1 - pushZoom * push);
-  placeCam(cam, R, pushX * push, pushZ * push + (mode === 'home' ? (W < H ? 6 : 2.4) : 0));
+  placeCam(cam, R, pushX * push, pushZ * push + (mode === 'home' ? (W < H ? 6 : 2.4) : 0), par.x, par.z);
 }
 function fitHand(){
   if (!handH){ return; }
@@ -451,8 +481,9 @@ function fitHand(){
 /* ---------- resizing ---------- */
 function computeHandH(){
   if (mode !== 'game'){ handH = 0; stripH = 0; rows = 1; return; }
-  let tw = Math.min(W * .94 / 15.9, 66, H * .088); rows = 1;
-  if (tw < 36 && W < H){ rows = 2; tw = Math.min(W * .94 / 8.9, 56, H * .062); }
+  const big = typeof settings !== 'undefined' && settings.big;
+  let tw = Math.min(W * .94 / 15.9, big ? 84 : 66, H * (big ? .108 : .088)); rows = 1;
+  if (tw < (big ? 44 : 36) && W < H){ rows = 2; tw = Math.min(W * .94 / 8.9, 56, H * .062); }
   handH = Math.round(tw * (rows === 1 ? 2.3 : 3.75));
   stripH = W < 720 ? 84 : 58;
 }
@@ -481,9 +512,10 @@ function frame(now){
   if (Math.abs(warm - warmT) > .004 || Math.abs(turnI - turnIT) > .004 || turnPos.distanceToSquared(turnPosT) > .0004){
     const k = Math.min(1, dt * 5); warm += (warmT - warm) * k; turnI += (turnIT - turnI) * k; turnPos.lerp(turnPosT, k);
     hspot.color.copy(lampCol).lerp(warmCol, warm * .55); hspot.intensity = 6 + warm * 1.5;
-    turnSpot.intensity = turnI * 2.4; turnSpot.target.position.copy(turnPos); turnSpot.position.set(turnPos.x * .8, 26, turnPos.z * .8);
+    turnSpot.intensity = turnI * 1.5; turnSpot.target.position.copy(turnPos); turnSpot.position.set(turnPos.x * .8, 26, turnPos.z * .8);
     busy = true;
   }
+  if (Math.abs(par.x - par.tx) > .002 || Math.abs(par.z - par.tz) > .002){ const k = Math.min(1, dt * 4); par.x += (par.tx - par.x) * k; par.z += (par.tz - par.z) * k; busy = true; }
   for (let s = 0; s < sub; s++){
     for (const o of tiles){ if (o.xferAt && now >= o.xferAt){ o.xferAt = 0; doXfer(o); } if (step(o, h)) busy = true; }
     for (const o of hand.values()) if (step(o, h)) busy = true;
@@ -491,25 +523,47 @@ function frame(now){
     if (Math.abs(push - pushT) > .0004 || Math.abs(pushV) > .0004){ const a = 9 * (pushT - push) - 6 * pushV; pushV += a * h; push += pushV * h; busy = true; }
   }
   for (const o of tiles) if (o.xferAt) busy = true;
-  updateCam();
+  if (Math.abs(settle) > .0005 || Math.abs(settleV) > .0005){ settleV += (-140 * settle - 15 * settleV) * dt; settle += settleV * dt; busy = true; } else { settle = 0; settleV = 0; }
+  if (flick > .004){ flick *= Math.exp(-dt * 4.5); spot.intensity = 6.6 * (1 + flick * .22); spot.color.copy(lampCol).lerp(warmCol, Math.min(1, flick * .8)); busy = true; } else if (flick){ flick = 0; spot.intensity = 6.6; spot.color.copy(lampCol); }
+  updateCam(); cam.position.y += settle; cam.updateMatrixWorld();
   draw();
   window.TW_busy = busy;
   // hold the frame rate: give up shadow quality first, resolution last
   if (busy && !window.TW_fast && raw < 120){
-    if (qSkip > 0) qSkip--; else { qSum += raw; qN++; if (qN >= 50){ const avg = qSum / qN; qSum = 0; qN = 0; if (avg > 21 && quality < 5){ quality++; applyQuality(); qSkip = 30; } } }
+    if (qSkip > 0) qSkip--; else { qSum += raw; qN++; if (qN >= 50){ const avg = qSum / qN; qSum = 0; qN = 0; if (avg > 21 && window.TW_auto !== false){ if (tier > 0){ tier--; applyTier(); } else if (lowStep < 2){ lowStep++; applyTier(); } qSkip = 40; } } }
   }
   if (busy || needFrame){ needFrame = false; requestAnimationFrame(frame); }
   else running = false;
   if (labelsDirty || busy) positionLabels();
 }
-function applyQuality(){
-  if (quality === 1){ for (const l of [spot, hspot]){ l.shadow.mapSize.set(1024, 1024); if (l.shadow.map){ l.shadow.map.dispose(); l.shadow.map = null; } } }
-  else if (quality === 2){ renderer.shadowMap.type = T3.PCFShadowMap; renderer.shadowMap.needsUpdate = true; for (const sc of [scene, hscene]) sc.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); }
-  else if (quality === 3){ spot.castShadow = false; hspot.castShadow = false; M.shadow.opacity = .55; }
-  else if (quality === 4){ pxCap = 1.5; resize(); }
-  else if (quality === 5){ pxCap = 1; resize(); }
-  window.TW_quality = quality;
+function detectTier(){
+  const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+  const gpu = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+  const mobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 820);
+  const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || (mobile ? 4 : 8), maxTex = renderer.capabilities.maxTextureSize;
+  window.TW_gpu = gpu;
+  if (/SwiftShader|llvmpipe|Software|Basic Render/i.test(gpu) || maxTex < 4096 || cores <= 2 || mem <= 2) return 0;
+  if (mobile) return cores >= 6 && mem >= 4 ? 1 : 0;
+  if (/Intel\(R\) (HD|UHD) Graphics|Mali-4|Adreno \(TM\) [3-5]/i.test(gpu)) return 1;
+  return cores >= 8 && mem >= 8 && maxTex >= 8192 ? 2 : 1;
 }
+/* three looks, chosen up front: High is soft filtered shadows at full resolution, Medium is plain soft shadows,
+   Low has contact shadows only and renders at a lower resolution. A slow device steps down a whole tier, never half of one. */
+function applyTier(){
+  const cast = tier > 0;
+  pxCap = tier === 0 ? [1.5, 1.25, 1][lowStep] : 2;
+  renderer.shadowMap.type = tier === 2 ? T3.VSMShadowMap : T3.PCFSoftShadowMap; renderer.shadowMap.needsUpdate = true;
+  for (const l of [spot, hspot]){
+    l.castShadow = cast; const big = l === spot && tier === 2 ? 2048 : l === spot ? 2048 : 1024;
+    l.shadow.mapSize.set(big, big); l.shadow.radius = tier === 2 ? (l === spot ? 5 : 3) : 1; l.shadow.bias = tier === 2 ? -.00012 : -.0003;
+    if (l.shadow.map){ l.shadow.map.dispose(); l.shadow.map = null; } if (l.shadow.mapPass){ l.shadow.mapPass.dispose(); l.shadow.mapPass = null; }
+  }
+  M.shadow.opacity = cast ? .5 : .78;
+  for (const sc of [scene, hscene]) sc.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); });
+  window.TW_quality = tier; window.TW_px = pxCap;
+  resize();
+}
+function setTier(t){ if (!ok) return; if (t === 'auto' || t == null){ tier = detectTier(); window.TW_auto = true; } else { tier = +t; window.TW_auto = false; } lowStep = 0; applyTier(); }
 function draw(){
   renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
   renderer.clear(true, true, true);
@@ -732,8 +786,9 @@ function applyTheme(th){
   theme = th; if (!ok) return;
   M.felt.color.set(th.felt); M.felt.sheenColor.set(th.sheen);
   M.walnut.map = th.wood === 'light' ? woodLight : woodDark; M.walnut.color.set(th.rail); M.walnut.needsUpdate = true;
-  M.jade.color.set(th.back);
-  lampCol.set(th.lamp); spot.color.set(th.lamp); hspot.color.copy(lampCol).lerp(warmCol, warm * .55);
+  M.jade.color.set(cos.back != null ? cos.back : th.back);
+  M.rack.map = cos.light ? M.rackMaps.light : M.rackMaps.dark; M.rack.color.set(cos.tint); M.rack.needsUpdate = true;
+  lampCol.set(cos.lamp != null ? cos.lamp : th.lamp); spot.color.copy(lampCol); hspot.color.copy(lampCol).lerp(warmCol, warm * .55);
   scene.background.set(th.room); hemiMain.groundColor.set(th.ground);
   for (const P of plaques) P.key = '';
   if (S && mode === 'game') sync();
@@ -751,6 +806,7 @@ function dragStart(ev){
   if (!S || !S.ui || S.ui.mode !== 'discard') return;
   const id = pick(ev); if (id === null) return;
   const h = hand.get(id); if (!h || !h.tgt) return;
+  h.vel.y += 1.6; h.active = true; wake(); // the tile answers the press at once
   drag = { id, x0: ev.clientX, y0: ev.clientY, moved: false, origin: h.pos.clone(), home: Object.assign({}, h.tgt), lastY: ev.clientY, lastT: performance.now(), vy: 0 };
   try { canvas.setPointerCapture(ev.pointerId); } catch(e){}
 }
@@ -819,29 +875,31 @@ async function init(host){
   renderer.outputColorSpace = T3.SRGBColorSpace; renderer.toneMapping = T3.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = T3.PCFSoftShadowMap; renderer.autoClear = false;
     W = innerWidth; H = innerHeight; renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.setSize(W, H, false);
+  { const q = (typeof settings !== 'undefined' && settings.quality != null && settings.quality !== 'auto') ? +settings.quality : null, u = new URLSearchParams(location.search).get('q'); tier = u != null ? +u : q != null ? q : detectTier(); window.TW_auto = u == null && q == null; }
   await document.fonts.load("40px TWbrush", '東'); await document.fonts.load("40px TWserif", '1');
   await buildAtlas();
   bodyGeo = merge([
-    roundedBox(TW, IVORY_H, TL, 3, .06).translate(0, TH / 2 - IVORY_H / 2, 0),
-    roundedBox(TW, JADE_H + .01, TL, 3, .06).translate(0, -TH / 2 + JADE_H / 2 + .005, 0),
+    roundedBox(TW, IVORY_H, TL, tier ? 4 : 2, .078).translate(0, TH / 2 - IVORY_H / 2, 0),
+    roundedBox(TW, JADE_H + .01, TL, tier ? 4 : 2, .078).translate(0, -TH / 2 + JADE_H / 2 + .005, 0),
     new T3.BoxGeometry(TW - .07, .035, TL - .07).toNonIndexed().translate(0, SEAM_Y, 0)
   ]);
-  rimGeo = roundedBox(TW, TH, TL, 2, .07);
+  rimGeo = roundedBox(TW, TH, TL, 2, .085);
   for (let t = 0; t < 42; t++) faceGeos.push(faceGeo(t));
-  shadowGeo = new T3.PlaneGeometry(TW * 1.7, TL * 1.55);
+  shadowGeo = new T3.PlaneGeometry(TW * 1.78, TL * 1.6);
   makeMaterials();
   const pm = new T3.PMREMGenerator(renderer);
   const env = pm.fromScene(roomEnv(), .04).texture; scene.environment = env; hscene.environment = env;
   buildTable(); buildRack(); buildTiles();
-  ok = true;
+  ok = true; applyTier();
+  window.addEventListener('pointermove', e => { if (e.pointerType !== 'mouse') return; par.tx = (e.clientX / W - .5) * -.7; par.tz = (e.clientY / H - .5) * -.45; wake(); });
   window.addEventListener('resize', resize);
   canvas.addEventListener('pointerdown', dragStart);
   canvas.addEventListener('pointerup', dragEnd); canvas.addEventListener('pointercancel', dragEnd);
   canvas.addEventListener('pointermove', e => { if (dragMove(e) && drag && drag.moved) return; const id = pick(e); if (id !== hoverId){ hoverId = id; canvas.style.cursor = id !== null && S && S.ui && S.ui.mode === 'discard' ? 'pointer' : ''; updateHandFx(); } });
   canvas.addEventListener('pointerleave', () => { hoverId = null; updateHandFx(); });
-  canvas.addEventListener('click', e => { if (performance.now() < noClick) return; const id = pick(e); if (id !== null){ const b = document.querySelector(`#hand [data-id="${id}"]`); if (b) b.click(); return; } const hit = pickMain(e); if (hit) explainHit(hit); else if (S && S.ui && S.ui.mode === 'read') S.ui.resolve(); });
+  canvas.addEventListener('click', e => { if (performance.now() < noClick) return; const id = pick(e); if (id !== null){ const b = document.querySelector(`#hand [data-id="${id}"]`); if (b) b.click(); return; } const hit = pickMain(e); if (hit) explainHit(hit); else if (S && S.ui && S.ui.mode === 'read') S.ui.resolve(); else if (e.clientY < H - handH - stripH) toggleLook(); });
   setMode('home');
-  window.TW_V = { tiles, hand, cam, hcam, scene, hscene, renderer, M, get handH(){ return handH; } };
+  window.TW_V = { tiles, hand, cam, hcam, scene, hscene, renderer, M, spot, hspot, get handH(){ return handH; } };
   return true;
 }
 function setMode(m){
@@ -859,7 +917,11 @@ async function deal(){
     await sleep(1050);
   } finally { dealPhase = 0; }
 }
+let look = false;
+/* on a tall phone: tap the cloth to lean in over the discards, tap again to sit back */
+function toggleLook(){ if (!(W < H) || mode !== 'game') return false; look = !look; pushX = 0; pushZ = .6; pushZoom = .36; pushT = look ? 1 : 0; wake(); return look; }
 function pushTo(pi, amt = 1){
+  look = false;
   const [x, z] = seatXZ(pi, 0, 8); pushX = x * .45; pushZ = z * .45; pushT = amt;
   // on a tall phone the result slip covers the lower table: slide the table up instead of pushing in
   if (W < 720 && W < H){ pushX = 0; pushZ = pi === 0 ? 13 : pi === 2 ? 3 : 8; pushT = 1; pushZoom = 0; } else pushZoom = .14;
@@ -868,5 +930,5 @@ function pushTo(pi, amt = 1){
 function nudge(id){ const h = hand.get(id); if (h && h.tgt){ h.rvel.z += 2.4; h.active = true; wake(); } }
 function handXY(id){ const h = hand.get(id); if (!h || !h.g.visible) return null; const q = h.tgt || h.pos; return screenXY(hcam, q.x, q.y + STAND, q.z); }
 function seatXY(pi, v = 7){ const [x, z] = seatXZ(pi, 0, v); return screenXY(cam, x, 0, z); }
-return { init, sync, setMode, deal, pushTo, nudge, applyTheme, renderTileImages, handXY, seatXY, slow(ms = 520){ slowUntil = performance.now() + ms; wake(); }, IMG, get ok(){ return ok; }, setFocus(id){ focusId = id; updateHandFx(); }, fx: updateHandFx, invalidate, positionLabels };
+return { init, sync, setMode, deal, pushTo, nudge, applyTheme, renderTileImages, handXY, seatXY, slow(ms = 520){ slowUntil = performance.now() + ms; wake(); }, IMG, get ok(){ return ok; }, setFocus(id){ focusId = id; updateHandFx(); }, fx: updateHandFx, invalidate, positionLabels, setCos(o){ cos = Object.assign({ back: null, lamp: null, tint: 0xffffff, light: false }, o); if (ok && theme) applyTheme(theme); }, thump(a = 1, lamp = false){ if (!ok) return; settleV -= a * 1.1; if (lamp) flick = 1; wake(); }, resize, setTier, get tier(){ return tier; }, get gpu(){ return window.TW_gpu; } };
 })();

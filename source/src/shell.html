@@ -28,7 +28,13 @@ button{font:inherit;color:inherit;cursor:pointer}
 #veil::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 62% 58% at 50% 55%, rgba(0,0,0,0) 35%, rgba(0,0,0,.5) 100%);opacity:0;transition:opacity .35s var(--ease)}
 body.moment #veil::before{opacity:1}
 #veil::after{content:"";position:absolute;inset:0;background:var(--grain);background-size:180px 180px;opacity:.035}
-#boot{position:fixed;inset:0;z-index:80;display:grid;place-items:center;font:italic 400 22px/1 var(--serif);color:var(--muted);background:#0b0a08}
+#boot{position:fixed;inset:0;z-index:80;display:grid;place-items:center;align-content:center;gap:18px;font:italic 400 19px/1 var(--serif);color:var(--muted);background:#0b0a08;transition:opacity .6s ease}
+#boot.gone{opacity:0;pointer-events:none}
+#boot .bw{display:flex;align-items:center;gap:12px;font:600 40px/1 var(--serif);font-style:normal;color:#EFE4C8;letter-spacing:.02em}
+#boot .bw i{font:400 20px/1 var(--brush);font-style:normal;color:#F6ECD8;background:#A8281E;padding:5px 5px 7px;border-radius:2px}
+#boot .bl{width:120px;height:1px;background:rgba(201,162,74,.25);overflow:hidden}
+#boot .bl::after{content:"";display:block;width:40%;height:100%;background:#C9A24A;animation:bootl 1.1s ease-in-out infinite alternate}
+@keyframes bootl{from{transform:translateX(-40%)}to{transform:translateX(250%)}}
 .screen{position:fixed;inset:0;z-index:2;pointer-events:none}
 .screen[hidden]{display:none!important}
 .screen > *{pointer-events:auto}
@@ -204,7 +210,7 @@ body.moment #veil::before{opacity:1}
 .swatches{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3)}
 .sw{background:none;border:1px solid rgba(150,124,82,.55);padding:var(--s2);text-align:left;display:flex;flex-direction:column;gap:4px;border-radius:2px}
 .sw.on{border-color:var(--verm);box-shadow:inset 0 0 0 1px var(--verm)}
-.sw[disabled]{cursor:default}.sw[disabled] .felt{opacity:.45}
+.sw[data-open="0"]{border-style:dashed}.sw[data-open="0"] b{color:#6b5a43}
 .sw .felt{display:block;height:92px;position:relative;border-radius:1px;overflow:hidden}
 .sw .rl{position:absolute;left:0;right:0;top:0;height:13px}
 .sw .bk,.sw .iv{position:absolute;bottom:14px;width:30px;height:40px;border-radius:4px;box-shadow:0 3px 5px rgba(0,0,0,.4)}
@@ -277,6 +283,70 @@ table.cmp .row .tile{--w:26px}
 .booknav{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:var(--s4)}
 .pg{font:italic 500 17px/1 var(--serif);color:#6b5a43}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.brush path{stroke-dashoffset:0}}
+
+/* v5: kinds of player, near miss, rare pattern, records, things for the table */
+.kinds{display:flex;flex-direction:column;gap:6px;width:100%}
+.kq{font:600 17px/1.2 var(--serif);color:#4a3d2c}
+.tbtn.kind{flex-direction:column;align-items:flex-start;gap:1px;padding:6px 14px 7px;text-align:left;min-height:46px;width:100%;letter-spacing:0}
+.tbtn.kind b{font:600 18px/1.1 var(--serif)}
+.tbtn.kind small{font:500 14.5px/1.2 var(--serif);opacity:.85}
+.sfoot:has(.kinds){flex-direction:column;align-items:stretch}
+.sfoot:has(.kinds) .sbtns{width:100%}
+.sfoot:has([data-share]){flex-wrap:wrap}
+.sfoot:has([data-share]) .sbtns{width:100%;justify-content:flex-end}
+.slip:has(.kinds) .ln.nofan{display:none}
+.nearmiss{margin-bottom:var(--s3);padding:8px 10px;border-left:3px solid var(--c-coral);background:rgba(204,104,74,.09);font-size:15.5px;color:#3a2f22;display:flex;flex-direction:column;gap:5px}
+.nearmiss.far{border-left-color:#B9A77F;background:none;padding:2px 10px;color:#5a4a36}
+.nearmiss b{font:600 17px/1.1 var(--serif)}
+.nearmiss div{display:flex;align-items:center;gap:8px}
+.nearmiss .tile{--w:24px;flex:none}
+.rare{position:fixed;inset:0;z-index:70;display:grid;place-items:center;background:rgba(8,7,5,.92);animation:fadeIn .2s var(--ease);cursor:pointer}
+.rare.out{opacity:0;transition:opacity .24s ease}
+.rin{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;color:#EFE4C8;padding:24px;max-width:520px}
+.rin h2{font:600 clamp(34px,7vw,56px)/1 var(--serif);margin:0;letter-spacing:.01em}
+.rin p{margin:0;font-size:19px;color:#d9ccac}
+.rin small{font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--c-coral)}
+.rin .row{justify-content:center}
+.rin .tile{--w:34px}
+.rstamp{font:400 78px/1 var(--brush);color:#F6ECD8;background:var(--c-red);padding:10px 12px 16px;border-radius:3px;animation:stampDown .24s cubic-bezier(.2,.8,.3,1) both;box-shadow:0 2px 0 rgba(0,0,0,.35)}
+@keyframes stampDown{from{transform:scale(1.5) rotate(-5deg);opacity:0}to{transform:scale(1) rotate(-3deg);opacity:1}}
+.overlay.peek{background:transparent;pointer-events:none}
+.overlay.peek .book{opacity:0;pointer-events:none}
+.peekbar{position:fixed;left:50%;top:max(14px,env(safe-area-inset-top));transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:10px;padding:10px 12px 10px 16px;font:600 17px/1.2 var(--serif);max-width:calc(100vw - 24px)}
+.peekbar span{flex:1}
+.cosrow{display:grid;grid-template-columns:92px 1fr;gap:10px;align-items:start;padding:8px 0;border-bottom:1px solid rgba(150,124,82,.3);font:600 16.5px/1.2 var(--serif)}
+.cosrow > span{padding-top:9px}
+.cosrow > div{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(42,33,23,.35);border-radius:2px;background:transparent;padding:6px 10px 7px;font:600 15px/1 var(--serif);color:var(--paper-ink);min-height:38px}
+.chip i{width:16px;height:16px;border-radius:2px;border:1px solid rgba(42,33,23,.45);flex:none}
+.chip i.auto{background:transparent;border-style:dashed}
+.chip.on{background:var(--paper-ink);color:var(--paper)}
+.chip.lock{color:#8a7a62;border-style:dashed}
+.chip small{font:500 13px/1 var(--serif);opacity:.85}
+.weekly{display:flex;align-items:center;gap:var(--s3);padding:10px 12px;border:1px solid rgba(150,124,82,.5);border-radius:2px}
+.weekly > div{flex:1}
+.weekly b{font:600 21px/1.1 var(--serif);display:block}
+.weekly small{display:block;font-size:14.5px;color:#6b5a43;line-height:1.3;margin-top:3px}
+.weekly.done{border-color:var(--c-jade)}
+.recs{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:var(--s4) var(--s3);margin-bottom:var(--s3)}
+body.peeking #screen-home{visibility:hidden}
+.seals{margin-top:var(--s3);color:var(--verm)}
+.hist{display:flex;flex-direction:column}
+.hrow{border-bottom:1px solid rgba(150,124,82,.3);font-size:15.5px}
+.hrow summary{display:grid;grid-template-columns:104px 62px 1fr auto;gap:8px;padding:7px 0;cursor:pointer;list-style:none;align-items:baseline}
+.hrow summary::-webkit-details-marker{display:none}
+.hrow summary span{color:#7a6850}
+.hrow summary i{font-style:normal;font-weight:700}
+.hrow.w summary i{color:var(--c-jade)}
+.hrow.p summary i{color:var(--c-red)}
+.hrow p{margin:0 0 8px;color:#5a4a36;font-size:14.5px}
+.stable{columns:2;column-gap:var(--s5);font-size:15.5px}
+.stable div{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(150,124,82,.25);break-inside:avoid}
+.ptable{margin:var(--s3) 0;font-size:15.5px}
+.ptable div{display:grid;grid-template-columns:64px repeat(8,1fr);padding:4px 0;border-bottom:1px solid rgba(150,124,82,.25)}
+.ptable b{text-align:right;font-weight:600}
+.ptable span{color:#7a6850}
+@media (max-width:560px){.stable{columns:1}.cosrow{grid-template-columns:1fr}.cosrow > span{padding-top:0}.hrow summary{grid-template-columns:96px 1fr auto}.hrow summary span:nth-child(2){display:none}.tabs button{padding-left:6px;padding-right:6px;font-size:14px}}
 </style>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <filter id="brushy" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="4" result="t"/><feDisplacementMap in="SourceGraphic" in2="t" scale="2.4"/></filter>
@@ -298,4 +368,4 @@ table.cmp .row .tile{--w:26px}
 <div id="strokes"></div>
 <div id="overlayRoot"></div>
 <div id="toasts"></div>
-<div id="boot">Setting the table</div>
+<div id="boot"><div class="bw"><i>和</i>Tilewind</div><div class="bl"></div><div id="bootMsg">Setting the table</div></div>

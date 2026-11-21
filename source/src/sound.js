@@ -123,6 +123,11 @@ function music(){
     }, 200);
   } catch(e){}
 }
+/* a ready hand: three notes climbing out of the quiet */
+function lift(){
+  if (!actx || !armed || autotest || settings.music <= 0) return;
+  try { const t = actx.currentTime + .08; [7, 9, 11].forEach((d, i) => pluck(noteAt(d), t + i * .17, .13 - i * .01, 2.8, musBus)); } catch(e){}
+}
 function setTension(v){
   tension = v;
   if (padGain && actx) padGain.gain.setTargetAtTime(v > .5 ? .25 : 1, actx.currentTime, 1.2);

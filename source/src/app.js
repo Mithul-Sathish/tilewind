@@ -189,7 +189,7 @@ function renderHome(){
 
 /* ---------------- the book: collection, tables, today, rules, settings ---------------- */
 let bookTab = 'hands', lessonIdx = 0;
-const TABS = [['hands', 'Hands'], ['tables', 'Tables'], ['today', 'Today'], ['rules', 'Rules'], ['settings', 'Settings']];
+const TABS = [['hands', 'Hands'], ['tables', 'Tables'], ['today', 'Today'], ['records', 'Records'], ['rules', 'Rules'], ['settings', 'Settings']];
 function closeBook(){ $('#overlayRoot').innerHTML = ''; if (S) render(); else renderHome(); }
 function openBook(tab){
   if (S && S.ui && S.ui.mode === 'read') return;
@@ -221,15 +221,22 @@ function drawTab(){
     const nt = nextTheme();
     el.innerHTML = `<p class="blead">${nt ? `Quests and finished matches open new tables. Next: ${nt.name}, ${profile.themePts} of ${nt.need}.` : 'All six tables are open.'}</p><div class="swatches">${THEMES.map(t => {
       const open = themeOpen(t), c = n => '#' + n.toString(16).padStart(6, '0');
-      return `<button class="sw ${profile.theme === t.id ? 'on' : ''}" data-theme="${t.id}" ${open ? '' : 'disabled'}><span class="felt" style="background:${c(t.felt)}"><i class="rl" style="background:${t.wood === 'light' ? '#b08a5a' : '#4a2e1c'};box-shadow:inset 0 0 0 99px ${c(t.rail)}55"></i><i class="bk" style="background:${c(t.back)}"></i><i class="iv"></i></span><b>${t.name}</b><small>${open ? (profile.theme === t.id ? 'On the table' : 'Open') : `${t.need - profile.themePts} more to open`}</small></button>`; }).join('')}</div>`;
-    el.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => { profile.theme = b.dataset.theme; save(); V.applyTheme(themeOf(profile.theme)); snd('place'); drawTab(); });
+      return `<button class="sw ${profile.theme === t.id ? 'on' : ''}" data-theme="${t.id}" data-open="${open ? 1 : 0}"><span class="felt" style="background:${c(t.felt)}"><i class="rl" style="background:${t.wood === 'light' ? '#b08a5a' : '#4a2e1c'};box-shadow:inset 0 0 0 99px ${c(t.rail)}55"></i><i class="bk" style="background:${c(t.back)}"></i><i class="iv"></i></span><b>${t.name}</b><small>${open ? (profile.theme === t.id ? 'On the table' : 'Open') : `${t.need - profile.themePts} more to open. Tap to look.`}</small></button>`; }).join('')}</div>${cosHTML()}`;
+    el.querySelectorAll('[data-cos]').forEach(b => b.onclick = () => { const [k, id] = b.dataset.cos.split(':'), it = cosItem(k, id), open = cosOpen(it); snd('pick');
+      peek(`${it.name} ${COS_NAME[k].toLowerCase()}${open ? '' : `. Opens in ${it.need - profile.cosPts} more.`}`, { [k]: id }, open, () => { profile.cos[k] = id; save(); snd('place'); }); });
+    el.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => { const t = themeOf(b.dataset.theme);
+      if (b.dataset.open === '1'){ profile.theme = t.id; save(); V.applyTheme(t); applyCos(); snd('place'); drawTab(); }
+      else { snd('pick'); peek(`${t.name}. Opens in ${t.need - profile.themePts} more quests or matches.`, {}, false, null, t.id); } });
   } else if (bookTab === 'today'){
     const ri = rankInfo(), qs = todaysQuests(), nt = nextTheme(), db = profile.daily[dayKey()];
     el.innerHTML = `<div class="rankbig"><span class="rseal">${ri.seal}</span><div><b>${ri.name}</b><div class="bar"><i style="width:${Math.round(ri.frac * 100)}%"></i></div><small>${ri.next ? `${ri.into} of ${ri.need} to ${ri.next}` : 'The top rank'}</small></div></div>
       <div class="ladder">${RANKS.map((r, i) => `<span class="${i <= ri.i ? 'on' : ''}"><i>${r.seal}</i>${r.name}</span>`).join('')}</div>
       <h3>Today's quests</h3><div class="quests">${qs.map(q => `<div class="${profile.quests.done[q.id] ? 'done' : ''}"><i></i>${q.text}</div>`).join('')}</div>
       <p class="blead">${nt ? `Each quest is one step toward ${nt.name}: ${profile.themePts} of ${nt.need}.` : 'Every table is open. Quests still count toward your record.'}</p>
-      <h3>Record</h3><div class="recs"><div><b>${profile.wins}</b>hands won</div><div><b>${profile.hands}</b>hands played</div><div><b>${profile.games}</b>matches</div><div><b>${profile.bestFan || 0}</b>best fan</div><div><b>${profile.dailyDays}</b>daily hands</div><div><b>${db === undefined ? '–' : (db > 0 ? '+' : '') + db}</b>best today</div></div>`;
+      ${weeklyHTML()}`;
+    $('#wkPlay').onclick = () => { $('#overlayRoot').innerHTML = ''; arm(); startGame('weekly'); };
+  } else if (bookTab === 'records'){
+    el.innerHTML = recordsHTML();
   } else if (bookTab === 'rules'){
     const L = LESSONS[lessonIdx], last = lessonIdx === LESSONS.length - 1;
     const quiz = L.quiz ? `<div class="quiz"><div class="quiz-q">${L.quiz.q}</div><div class="quiz-opts">${L.quiz.opts.map((o, i) => `<button class="quiz-opt" data-q="${i}">${rowHTML(o[0])}</button>`).join('')}</div><div class="quiz-fb" id="qfb"></div></div>` : '';
@@ -243,20 +250,26 @@ function drawTab(){
     const tog = key => seg(key, [[true,'On'],[false,'Off']]);
     const sl = key => `<input type="range" min="0" max="1" step="0.05" value="${settings[key]}" data-sl="${key}" aria-label="${key === 'music' ? 'Music volume' : 'Effects volume'}">`;
     el.innerHTML = `
+      <div class="set"><div>How you play<small>${profile.kind ? KINDS.find(k => k.id === profile.kind).line : 'Sets the coach, the tiles and the table in one tap. Everything below can still be changed.'}</small></div><div class="seg" data-key="kind">${KINDS.map(k => `<button data-v="${k.id}" class="${profile.kind === k.id ? 'on' : ''}">${{ new:'New', casual:'Casual', veteran:'Lifelong' }[k.id]}</button>`).join('')}</div></div>
       <div class="set"><div>Coach<small>${['Silent.', 'Speaks up only before a clear mistake.', 'Marks a suggested discard and advises on calls.'][settings.coach]}</small></div>${seg('coach', [[2,'Full'],[1,'Nudge'],[0,'Off']])}</div>
-      <div class="set"><div>Opponents<small>${STYLES[settings.difficulty].line} From your next match.</small></div>${seg('difficulty', STYLES.map((s, i) => [i, ['Loose','Careful','Hunters'][i]]))}</div>
+      <div class="set"><div>Opponents<small>${STYLES[settings.difficulty].line} From your next match.</small></div>${seg('difficulty', STYLES.map((s, i) => [i, ['Loose','Careful','Hunters','Old hands'][i]]))}</div>
       <div class="set"><div>Match<small>${(LENGTHS.find(l => l[0] === settings.length) || LENGTHS[1])[2]}. From your next match.</small></div>${seg('length', LENGTHS.map(l => [l[0], l[1]]))}</div>
       <div class="set"><div>Music</div>${sl('music')}</div>
       <div class="set"><div>Effects</div>${sl('sfx')}</div>
       <div class="set"><div>Fast-forward<small>Opponents and dealing at more than double speed.</small></div>${tog('fast')}</div>
       <div class="set"><div>One-tap discard<small>Off: tap to lift, tap again to throw. Dragging always works.</small></div>${tog('oneTap')}</div>
-      <div class="set"><div>Tile numbers<small>Small numbers under suit tiles on your rack.</small></div>${tog('labels')}</div>
+      <div class="set"><div>Tile numbers<small>Small numbers under suit tiles on your rack. Off is the traditional view.</small></div>${tog('labels')}</div>
+      <div class="set"><div>Large tiles<small>A bigger rack, for small screens and tired eyes.</small></div>${tog('big')}</div>
+      <div class="set"><div>Graphics<small>Now ${['Low', 'Medium', 'High'][V.tier]}${settings.quality === 'auto' ? ', chosen for this device' : ''}. High has the softest shadows; Low keeps the frame rate on older devices.</small></div>${seg('quality', [['auto','Auto'],[2,'High'],[1,'Medium'],[0,'Low']])}</div>
       ${navigator.vibrate ? `<div class="set"><div>Vibration<small>A light tap on discards and calls.</small></div>${tog('haptics')}</div>` : ''}
       <div class="set" style="border:0"><div>Guided first hand<small>Three minutes, one real hand, every step explained.</small></div><button class="tbtn" id="sTut">Play it</button></div>`;
     el.querySelectorAll('.seg').forEach(sg => sg.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
-      let v = b.dataset.v; v = v === 'true' ? true : v === 'false' ? false : +v;
-      settings[sg.dataset.key] = v; save(); snd('pick'); const top = el.scrollTop; drawTab(); el.scrollTop = top;
+      let v = b.dataset.v; v = v === 'true' ? true : v === 'false' ? false : isNaN(+v) ? v : +v;
+      const key = sg.dataset.key;
+      if (key === 'kind') setKind(v); else settings[key] = v;
+      if (key === 'quality') V.setTier(v); if (key === 'big') V.resize();
+      save(); snd('pick'); const top = el.scrollTop; drawTab(); el.scrollTop = top;
     }));
     el.querySelectorAll('[data-sl]').forEach(i => i.oninput = () => { settings[i.dataset.sl] = +i.value; save(); arm(); setVolumes(); if (i.dataset.sl === 'sfx') snd('place'); });
     $('#sTut').onclick = () => { $('#overlayRoot').innerHTML = ''; arm(); startGame('tut'); };
