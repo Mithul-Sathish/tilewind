@@ -2,7 +2,8 @@
    TABLE TALK: the thin layer of type over the 3D table
    ========================================================= */
 const $ = s => document.querySelector(s);
-function tileHTML(t, cls = ''){ return `<span class="tile f${t} ${cls}" title="${tName(t)}" role="img" aria-label="${tName(t)}"></span>`; }
+const helperMark = t => t < 27 ? `<i class="hm s${suitOf(t)}">${t % 9 + 1}</i>` : t < 31 ? `<i class="hm w">${'ESWN'[t - 27]}</i>` : '';
+function tileHTML(t, cls = ''){ return `<span class="tile f${t} ${cls}" data-t="${t}" title="${tName(t)}" role="img" aria-label="${tName(t)}">${settings.helpers ? helperMark(t) : ''}</span>`; }
 const rowHTML = (ts, cls = '') => `<div class="row">${ts.map(t => t === null ? '<span class="gap"></span>' : tileHTML(t, cls)).join('')}</div>`;
 function injectTileCSS(){
   const st = document.createElement('style');
@@ -18,34 +19,39 @@ function render(){
   // the hand, mirrored as real buttons for keyboards and screen readers
   const hand = $('#hand');
   const focusedId = document.activeElement && document.activeElement.closest && document.activeElement.closest('#hand .tile') ? document.activeElement.dataset.id : null;
-  const drawn = me.hand.find(x => x.id === me.drawnId);
-  const rest = sortTiles(me.hand.filter(x => x.id !== me.drawnId));
-  const one = (x, extra) => `<button class="tile ${extra}" data-id="${x.id}" role="option" tabindex="${canDiscard ? 0 : -1}" aria-label="${tName(x.t)}" aria-selected="${S.selected === x.id}"></button>`;
-  hand.innerHTML = S.turn === -1 ? '' : rest.map(x => one(x, '')).join('') + (drawn ? one(drawn, 'drawn') : '');
+  const ord = handOrder(), byId = new Map(me.hand.map(x => [x.id, x]));
+  const one = (x, extra) => `<button class="tile ${extra}" data-id="${x.id}" role="option" tabindex="${canDiscard || ui.mode === 'chowpick' ? 0 : -1}" aria-label="${tName(x.t)}" aria-selected="${S.selected === x.id}"></button>`;
+  hand.innerHTML = S.turn === -1 ? '' : ord.ids.map((id, i) => one(byId.get(id), i >= ord.ids.length - ord.loose ? 'drawn' : '')).join('');
   if (focusedId){ const f = hand.querySelector(`[data-id="${focusedId}"]`); if (f) f.focus(); }
-  // calls rise from the table edge
-  const acts = ui.actions || [], coachOn = settings.coach === 2 || S.showRec || S.mode === 'tut';
-  const key = acts.map(a => a.label + (a.tiles || []).join()).join('|') + coachOn;
+  // calls: a quiet row at the table edge. Pass and every call are the same size; nothing is chosen for you
+  const acts = ui.actions || [], lvl = ui.level || callLevel(), showRec = (lvl === 'guided' && settings.coach === 2) || S.showRec || S.mode === 'tut';
+  const whys = acts.filter(a => a.why), distinct = new Set(whys.map(a => a.why)), why = (distinct.size > 1 && lvl !== 'guided' ? whys.map(a => `<div>${a.label}: ${a.why.replace(/^./, m => m.toLowerCase())}</div>`) : [...distinct].map(w => `<div>${w}</div>`)).join('');
+  const key = acts.map(a => a.label + (a.why || '')).join('|') + showRec + lvl + ui.mode;
   const box = $('#actions');
   if (box._k !== key){
     box._k = key;
-    box.innerHTML = acts.map((a, i) => `<button class="call k-${a.kind} ${coachOn && a.rec ? 'rec' : ''}" data-act="${i}" style="animation-delay:${i * 45}ms">${GLYPH[a.kind] ? `<span class="gl">${GLYPH[a.kind]}</span>` : ''}<span class="lb">${a.label}</span>${a.tiles ? `<span class="ts">${a.tiles.map(t => tileHTML(t)).join('')}</span>` : ''}</button>`).join('');
+    box.className = 'lv-' + lvl + (ui.mode === 'claim' ? ' claim' : '');
+    box.innerHTML = (why && ui.mode === 'claim' ? `<div class="whyline">${why}</div>` : '') + `<div class="calls">${acts.map((a, i) => `<button class="call k-${a.kind} ${showRec && a.rec ? 'rec' : ''}" data-act="${i}"><span class="lb">${a.label}</span>${a.key && a.key.length === 1 && a.key !== ' ' ? `<kbd>${a.key.toUpperCase()}</kbd>` : a.key === ' ' ? '<kbd>Space</kbd>' : ''}</button>`).join('')}</div>`;
   }
   document.body.classList.toggle('moment', !!ui.moment);
+  document.body.classList.toggle('picking', ui.mode === 'chowpick');
   // one quiet line, and the tiles you are waiting for
   let msg = S.say && S.say.until > Date.now() ? S.say.text : (ui.coach || '');
   // while the others play, name what was just thrown so the table is easy to follow
   if (!msg && S.turn > 0 && S.lastDiscard && S.lastDiscard.from > 0){ const d = S.players[S.lastDiscard.from].discards.slice(-1)[0]; if (d && d.id === S.lastDiscard.id) msg = `<i class="dot" style="background:${SEAT[S.lastDiscard.from].bright}"></i>${S.players[S.lastDiscard.from].name} threw ${tileHTML(d.t)} ${tName(d.t)}`; }
   $('#coach').innerHTML = msg ? `<span>${msg}</span>` : '';
   let g = '';
-  if (S.turn !== -1){
+  if (S.turn !== -1 && S.mode !== 'lesson'){
     if (me.hand.length % 3 === 1) S.waits = myWaits();
     const w = S.waits || [];
     if (w.length && (me.hand.length % 3 === 1 || S.wasReady)) g = `<span class="near">Ready</span>` + w.map(x => `<span class="ghost ${x.left ? '' : 'none'}" title="${tName(x.t)}, ${x.left} unseen">${tileHTML(x.t)}<i>${x.left}</i></span>`).join('');
     else if (settings.coach === 2 && me.hand.length){ const st = stepsToWin(); if (st > 0 && st < 9) g = `<span class="near dim">${st} ${st === 1 ? 'tile' : 'tiles'} from ready</span>`; }
   }
   const gh = $('#ghosts'); if (gh._h !== g){ gh.innerHTML = g; gh._h = g; }
-  const bf = $('#bFast'); bf.setAttribute('aria-pressed', settings.fast); bf.classList.toggle('on', settings.fast);
+  $('#bPace').textContent = PACE_NAME[settings.pace] || 'Relaxed';
+  $('#bView').classList.toggle('on', V.tableView); $('#bView').setAttribute('aria-pressed', V.tableView);
+  $('#bSort').hidden = !manualRack();
+  renderRecent();
   const tense = S.turn !== -1 && (S.wasReady || S.wall.length < 16) ? 1 : 0;
   if (tense !== tenseNow){ tenseNow = tense; setTension(tense); }
   V.sync();
@@ -80,6 +86,8 @@ function callStroke(pi, type, ms = 950){
 /* tap anything on the table to ask what it is */
 function explainHit(hit){
   if (!S) return;
+  if (S.mode === 'lesson' && typeof lessonTap === 'function' && lessonTap(hit)) return;
+  if (S.claimWin && hit.kind === 'tile' && hit.id === S.claimWin.id){ S.claimWin.tap(); return; }
   if (S.ui && S.ui.mode === 'read'){ S.ui.resolve(); return; }
   if (hit.kind === 'marker') return say(`${WIND_NAME[S.roundWind]} round, ${S.wall.length} tiles left in the wall. A Pung of ${WIND_NAME[S.roundWind]} Winds scores 1 fan for anyone this round.`, 5200);
   if (hit.kind === 'plaque'){
@@ -106,16 +114,20 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-more]') || (S.ui && S.ui.mode === 'read' && !e.target.closest('button, canvas'))){ if (S.ui && S.ui.mode === 'read') S.ui.resolve(); return; }
   const actBtn = e.target.closest('[data-act]');
   if (actBtn && S.ui && S.ui.actions){ const a = S.ui.actions[+actBtn.dataset.act]; if (!a) return; S.showRec = false; if (!a.value) snd('pick'); S.ui.resolve(a.value); return; }
+  if (e.target.closest('#newest') && S.claimWin){ S.claimWin.tap(); return; }
   const tile = e.target.closest('#hand .tile');
   if (tile){
     const id = +tile.dataset.id;
+    if (S.mode === 'lesson' && typeof lessonRackTap === 'function' && lessonRackTap(id)) return;
+    if (S.ui && S.ui.mode === 'chowpick'){ chowTap(id); return; }
     if (S.ui && S.ui.mode === 'read'){ S.ui.resolve(); return; }
     if (!S.ui || S.ui.mode !== 'discard'){ V.nudge(id); snd('nope'); return; }
     if (S.selected === id || settings.oneTap){ if (!tryDiscard(id)) render(); }
     else {
       S.selected = id; snd('pick');
       const x = S.players[0].hand.find(h => h.id === id);
-      if (x && settings.coach && S.mode !== 'tut') say(explainTile(x.t), 4200); else render();
+      const n = x ? onTable(x.t) : 0, tbl = n ? ` ${n} already on the table, marked in blue.` : '';
+      if (x && settings.coach && S.mode !== 'tut') say(explainTile(x.t) + tbl, 4200); else if (x && n) say(`${tName(x.t)}:${tbl}`, 3200); else render();
     }
   }
 });
@@ -126,7 +138,10 @@ document.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (S.ui && S.ui.mode === 'read'){ if (k === 'enter' || k === ' '){ e.preventDefault(); S.ui.resolve(); } return; }
   if (k === 'h'){ hint(); return; }
-  if (k === 'f'){ $('#bFast').click(); return; }
+  if (k === 'f'){ $('#bPace').click(); return; }
+  if (k === 't'){ $('#bView').click(); return; }
+  if (k === 's' && manualRack()){ sortOnce(); return; }
+  if (k === 'escape' && S.ui && S.ui.mode === 'chowpick'){ S.ui.resolve(null); return; }
   if (k === 'm' || k === 'escape'){ openBook('settings'); return; }
   const acts = (S.ui && S.ui.actions) || [];
   const ai = acts.findIndex(a => a.key === k);
@@ -134,6 +149,10 @@ document.addEventListener('keydown', e => {
   const tiles = [...document.querySelectorAll('#hand .tile')];
   if (!tiles.length) return;
   const cur = tiles.indexOf(document.activeElement);
+  if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && e.shiftKey && cur >= 0){
+    e.preventDefault(); const id = +tiles[cur].dataset.id; moveInRack(id, e.key === 'ArrowRight' ? 1 : -1);
+    setTimeout(() => { const f = document.querySelector(`#hand [data-id="${id}"]`); if (f) f.focus(); }, 0); return;
+  }
   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft'){
     e.preventDefault();
     const n = cur < 0 ? (e.key === 'ArrowRight' ? 0 : tiles.length - 1) : (cur + (e.key === 'ArrowRight' ? 1 : -1) + tiles.length) % tiles.length;
@@ -143,7 +162,58 @@ document.addEventListener('keydown', e => {
 $('#hand').addEventListener('focusin', e => { const t = e.target.closest('.tile'); V.setFocus(t ? +t.dataset.id : null); });
 $('#hand').addEventListener('focusout', () => V.setFocus(null));
 $('#bHint').onclick = hint;
-$('#bFast').onclick = () => { settings.fast = !settings.fast; save(); snd('pick'); if (S){ say(settings.fast ? 'Fast-forward on.' : 'Fast-forward off.', 1400); } };
+const PACE_NAME = { relaxed:'Relaxed', normal:'Normal', fast:'Fast' };
+$('#bPace').onclick = () => { const o = ['relaxed', 'normal', 'fast']; settings.pace = o[(o.indexOf(settings.pace) + 1) % 3]; save(); snd('pick'); if (S){ say(`Speed: ${PACE_NAME[settings.pace]}.`, 1400); render(); } };
+$('#bView').onclick = () => onTableView(!V.tableView);
+$('#bSort').onclick = () => sortOnce();
+function onTableView(on){ if (!S) return; V.setTableView(on); snd('pick'); render(); }
+
+/* ---------------- what follows the table: the newest discard, last turns, the Expert claim window ---------------- */
+function renderRecent(){
+  const el = $('#recent'); if (!el) return;
+  const items = S && S.turn !== -1 && S.mode !== 'lesson' ? S.recent || [] : [];
+  const k = items.map(r => r.id).join() + '|' + (S ? S.wall.length : '') + settings.helpers;
+  if (el._k === k) return; el._k = k;
+  if (!items.length && !(S && S.turn !== -1 && S.mode !== 'lesson')){ el.innerHTML = ''; el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = `<span class="rl">Last turns</span>${items.map((r, i) => `<span class="ri ${i === items.length - 1 ? 'new' : ''}"><b style="--c:${SEAT[r.from].bright}">${r.from === 0 ? 'You' : S.players[r.from].name}</b>${tileHTML(r.t)}</span>`).join('')}<span class="rw">${S.wall.length} left</span>`;
+}
+function placeFollowers(){
+  const nw = $('#newest'); if (!nw) return;
+  const n = S && S.newest && S.turn !== -1 ? S.newest : null;
+  if (!n){ if (!nw.hidden){ nw.hidden = true; nw._k = ''; } return; }
+  const px = V.tilePx(n.id), w = Math.round(Math.max(44, Math.min(70, px * 1.55))), k = n.id + ':' + w + ':' + !!S.claimWin + settings.helpers;
+  if (nw._k !== k){
+    nw._k = k; nw.hidden = false; nw.classList.toggle('open', !!S.claimWin);
+    nw.innerHTML = `${tileHTML(n.t)}<b style="--c:${SEAT[n.from].bright}">${n.from === 0 ? 'You' : S.players[n.from].name}</b>${S.claimWin ? `<i class="cw" style="--ms:${Math.max(0, S.claimWin.until - Date.now())}ms"></i>` : ''}`;
+    nw.style.setProperty('--w', w + 'px');
+  }
+  const p = V.pointXY(0, 0, .3); nw.style.left = p.x + 'px'; nw.style.top = p.y + 'px';
+}
+/* press and hold any tile, on the table, the rack or a page, to see what it is */
+let infoTimer = 0;
+function onHold(hit, x, y){
+  if (!S && !hit.page) return;
+  const el = $('#info'), t = hit.t;
+  let html;
+  if (t == null) html = `<b>A face-down tile</b><span>${hit.id != null && S && S.wall.some(w => w.id === hit.id) ? `The wall: ${S.wall.length} tiles left to draw.` : 'Hidden until someone wins.'}</span>`;
+  else {
+    const kind = t < 27 ? `${SUIT_NAME[suitOf(t)]} suit, number ${numOf(t)}` : t < 31 ? 'A Wind. It has no number and only matches itself.' : t < 34 ? 'A Dragon. It has no number and only matches itself.' : 'A bonus tile. It is set aside at once and replaced.';
+    const unseen = S && S.mode !== 'lesson' && S.turn !== -1 && t < 34 ? unseenFor(0)[t] : null;
+    html = `<div class="ih">${tileHTML(t)}<b>${tName(t)}</b></div><span>${kind}</span>${unseen != null ? `<span>${unseen} of 4 still unseen by you</span>` : t < 34 ? '<span>There are 4 of every tile.</span>' : ''}`;
+    if (S && t < 34){ S.holdT = t; V.sync(); }
+  }
+  el.innerHTML = html; el.hidden = false;
+  const w = Math.min(260, innerWidth - 24); el.style.width = w + 'px';
+  el.style.left = Math.max(12, Math.min(innerWidth - w - 12, x - w / 2)) + 'px';
+  el.style.top = Math.max(12, y - 140) + 'px';
+  snd('pick'); haptic(8);
+  clearTimeout(infoTimer); infoTimer = setTimeout(hideInfo, 4200);
+}
+function hideInfo(){ const el = $('#info'); if (el) el.hidden = true; if (S && S.holdT != null){ S.holdT = null; V.sync(); } }
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#info')) { const el = $('#info'); if (el && !el.hidden) setTimeout(hideInfo, 0); } }, true);
+// the paper pages, the strip and the slip: hold a pictured tile too
+{ let ht = 0; document.addEventListener('pointerdown', e => { const t = e.target.closest('.tile[data-t]'); if (!t || e.target.closest('#hand')) return; const x = e.clientX, y = e.clientY; clearTimeout(ht); ht = setTimeout(() => onHold({ t: +t.dataset.t, page: true }, x, y), 460); const stop = () => { clearTimeout(ht); removeEventListener('pointerup', stop); removeEventListener('pointercancel', stop); }; addEventListener('pointerup', stop); addEventListener('pointercancel', stop); }); }
 $('#bMenu').onclick = () => openBook('settings');
 
 /* ---------------- the win ---------------- */
@@ -167,7 +237,7 @@ function showScreen(name){
   for (const s of ['home','game']) $('#screen-' + s).hidden = s !== name;
   if (name !== screenNow){ screenNow = name; V.setMode(name); }
 }
-function goHome(){ token++; S = null; tenseNow = -1; setTension(0); $('#overlayRoot').innerHTML = ''; $('#strokes').innerHTML = ''; document.body.classList.remove('moment'); renderHome(); showScreen('home'); }
+function goHome(){ token++; S = null; LS = null; $('#lesson').hidden = true; document.body.classList.remove('inlesson', 'picking'); hideInfo(); tenseNow = -1; setTension(0); $('#overlayRoot').innerHTML = ''; $('#strokes').innerHTML = ''; document.body.classList.remove('moment'); renderHome(); showScreen('home'); }
 
 const LENGTHS = [[1, 'Quick hand', 'One hand'], [4, 'East round', 'Four hands'], [16, 'Full game', 'Four rounds, sixteen hands']];
 function renderHome(){
@@ -194,7 +264,7 @@ function closeBook(){ $('#overlayRoot').innerHTML = ''; if (S) render(); else re
 function openBook(tab){
   if (S && S.ui && S.ui.mode === 'read') return;
   if ($('#overlayRoot .slip')) return;
-  bookTab = tab || bookTab; ensureTiles();
+  bookTab = tab || bookTab; ensureTiles(); if (S && V.tableView) V.setTableView(false);
   const inGame = !!S;
   const root = $('#overlayRoot');
   root.innerHTML = `<div class="overlay"><div class="book paper" role="dialog" aria-modal="true" aria-label="Collection">
@@ -256,23 +326,28 @@ function drawTab(){
       <div class="set"><div>Match<small>${(LENGTHS.find(l => l[0] === settings.length) || LENGTHS[1])[2]}. From your next match.</small></div>${seg('length', LENGTHS.map(l => [l[0], l[1]]))}</div>
       <div class="set"><div>Music</div>${sl('music')}</div>
       <div class="set"><div>Effects</div>${sl('sfx')}</div>
-      <div class="set"><div>Fast-forward<small>Opponents and dealing at more than double speed.</small></div>${tog('fast')}</div>
-      <div class="set"><div>One-tap discard<small>Off: tap to lift, tap again to throw. Dragging always works.</small></div>${tog('oneTap')}</div>
-      <div class="set"><div>Tile numbers<small>Small numbers under suit tiles on your rack. Off is the traditional view.</small></div>${tog('labels')}</div>
+      <div class="set"><div>Speed<small>${{ relaxed:'Each opponent takes about a second and a half, and every discard rests long enough to read.', normal:'About a second per opponent.', fast:'About half a second per opponent.' }[settings.pace]}</small></div>${seg('pace', [['relaxed','Relaxed'],['normal','Normal'],['fast','Fast']])}</div>
+      <div class="set"><div>Call prompts<small>${{ guided:'Each call is explained: what it completes and what it costs you.', standard:'A small, even prompt at the table edge. Nothing is suggested.', expert:'No prompt. Tap a discard yourself while it can still be taken, as at a real table.' }[settings.calls]}</small></div>${seg('calls', [['guided','Guided'],['standard','Standard'],['expert','Expert']])}</div>
+      <div class="set"><div>Tile helpers<small>A number in the corner of every suit tile and a letter on every wind, on the rack and on the table. Off is the traditional view.</small></div>${tog('helpers')}</div>
+      <div class="set"><div>Auto sort<small>${settings.autoSort === 'off' ? 'Off: your rack keeps the order you set, and a new tile waits on the right until you place it. Sort, by the rack, tidies it once.' : 'On: the rack sorts itself. Drag tiles along the rack to arrange them yourself.'}</small></div>${seg('autoSort', [['on','On'],['off','Off']])}</div>
+      <div class="set"><div>Sort by<small>${settings.sortStyle === 'sets' ? 'Likely sets first, then pairs, then tiles that are close, then loose tiles.' : 'Suit, then number.'}</small></div>${seg('sortStyle', [['suit','Suit and number'],['sets','Likely sets']])}</div>
+      <div class="set"><div>One-tap discard<small>Off: tap to lift, tap again to throw. Dragging up always throws; dragging along the rack rearranges.</small></div>${tog('oneTap')}</div>
       <div class="set"><div>Large tiles<small>A bigger rack, for small screens and tired eyes.</small></div>${tog('big')}</div>
       <div class="set"><div>Graphics<small>Now ${['Low', 'Medium', 'High'][V.tier]}${settings.quality === 'auto' ? ', chosen for this device' : ''}. High has the softest shadows; Low keeps the frame rate on older devices.</small></div>${seg('quality', [['auto','Auto'],[2,'High'],[1,'Medium'],[0,'Low']])}</div>
       ${navigator.vibrate ? `<div class="set"><div>Vibration<small>A light tap on discards and calls.</small></div>${tog('haptics')}</div>` : ''}
-      <div class="set" style="border:0"><div>Guided first hand<small>Three minutes, one real hand, every step explained.</small></div><button class="tbtn" id="sTut">Play it</button></div>`;
+      <div class="set"><div>Learn the tiles<small>About two minutes, hands on: the suits, the honours, the winning hand and a turn.</small></div><button class="tbtn" id="sLesson">Start</button></div>
+      <div class="set" style="border:0"><div>Guided first hand<small>One real hand with an easy deal, every step explained.</small></div><button class="tbtn" id="sTut">Play it</button></div>`;
     el.querySelectorAll('.seg').forEach(sg => sg.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
       let v = b.dataset.v; v = v === 'true' ? true : v === 'false' ? false : isNaN(+v) ? v : +v;
       const key = sg.dataset.key;
-      if (key === 'kind') setKind(v); else settings[key] = v;
-      if (key === 'quality') V.setTier(v); if (key === 'big') V.resize();
+      if (key === 'kind') setKind(v); else if (key === 'autoSort') setAutoSort(v); else settings[key] = v;
+      if (key === 'quality') V.setTier(v); if (key === 'big') V.resize(); if (key === 'helpers' || key === 'kind') V.setHelpers(settings.helpers);
       save(); snd('pick'); const top = el.scrollTop; drawTab(); el.scrollTop = top;
     }));
     el.querySelectorAll('[data-sl]').forEach(i => i.oninput = () => { settings[i.dataset.sl] = +i.value; save(); arm(); setVolumes(); if (i.dataset.sl === 'sfx') snd('place'); });
     $('#sTut').onclick = () => { $('#overlayRoot').innerHTML = ''; arm(); startGame('tut'); };
+    $('#sLesson').onclick = () => { $('#overlayRoot').innerHTML = ''; arm(); startLesson(); };
   }
 }
 function toast(title, body){

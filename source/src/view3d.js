@@ -144,6 +144,7 @@ async function buildAtlas(){
     jobs.push(img.decode().then(() => g.drawImage(img, (t % COLS) * CW, Math.floor(t / COLS) * CH, CW, CH)));
   }
   await Promise.all(jobs);
+  atlasBase = document.createElement('canvas'); atlasBase.width = AW; atlasBase.height = AH; atlasBase.getContext('2d').drawImage(c, 0, 0);
   atlasTex = new T3.CanvasTexture(c); atlasTex.colorSpace = T3.SRGBColorSpace; atlasTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   // carving: ink sits slightly below the ivory, with a soft edge
   const bw = AW / 2, bh = AH / 2, b = document.createElement('canvas'); b.width = bw; b.height = bh;
@@ -158,7 +159,29 @@ async function buildAtlas(){
   g2.filter = small ? 'blur(.6px)' : 'blur(1.1px)'; g2.drawImage(b, 0, 0);
   bumpTex = new T3.CanvasTexture(b2); bumpTex.anisotropy = atlasTex.anisotropy;
   window.TW_atlas = c;
+  // the helper marks, drawn once as SVG so the numerals are proper lining figures in the house serif
+  const cells = [];
+  for (let t = 0; t < 31; t++){
+    const x = (t % COLS) * CW, y = Math.floor(t / COLS) * CH, txt = t < 27 ? String(t % 9 + 1) : 'ESWN'[t - 27];
+    const col = t < 27 ? ['#A3221B', '#1B3566', '#185E31'][Math.floor(t / 9)] : '#1A1A1A';
+    const bw = CW * .36, bh = CH * .28, bx = x + CW * .02, by = y + CH * .018;
+    cells.push(`<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="${CW * .05}" fill="${col}"/><text x="${bx + bw / 2}" y="${by + bh * .8}" text-anchor="middle" fill="#F4ECDA" font-family="TWserif" font-weight="700" font-size="${CW * (t < 27 ? .36 : .3)}">${txt}</text>`);
+  }
+  helperImg = new Image();
+  helperImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${AW}" height="${AH}" viewBox="0 0 ${AW} ${AH}"><style>${FONT_CSS} text{font-variant-numeric:lining-nums;font-feature-settings:"lnum"}</style>${cells.join('')}</svg>`);
+  try { await helperImg.decode(); } catch(e){ helperImg = null; }
+  composeAtlas(helpersOn);
 }
+/* Tile helpers: a number in the corner of every suit tile and a letter on every wind, printed into the face itself
+   so they read the same on the rack, in the discards and in the melds */
+let atlasBase = null, helpersOn = false, helperImg = null;
+function composeAtlas(on){
+  const c = window.TW_atlas; if (!c || !atlasBase) return;
+  const g = c.getContext('2d'); g.save(); g.filter = 'none'; g.drawImage(atlasBase, 0, 0);
+  if (on && helperImg) g.drawImage(helperImg, 0, 0);
+  g.restore(); if (atlasTex) atlasTex.needsUpdate = true; wake();
+}
+function setHelpers(on){ on = !!on; if (on === helpersOn && atlasBase) return; helpersOn = on; composeAtlas(on); }
 function faceGeo(t){
   const fw = .88, fh = fw * 266 / 200;
   const g = new T3.PlaneGeometry(fw, fh); g.rotateX(-Math.PI / 2); g.translate(0, TH / 2 + .0015, 0);
@@ -180,6 +203,7 @@ function makeMaterials(){
   M.face = new T3.MeshPhysicalMaterial({ color: 0xffffff, map: atlasTex, bumpMap: bumpTex, bumpScale: 2.2, roughness: .35, clearcoat: .5, clearcoatRoughness: .3, envMapIntensity: .55, specularIntensity: .55, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   M.rim = new T3.MeshBasicMaterial({ color: 0xD9AE55, side: T3.BackSide });
   M.rimSoft = new T3.MeshBasicMaterial({ color: 0xC9A24A, side: T3.BackSide, transparent: true, opacity: .75 });
+  M.rimDead = new T3.MeshBasicMaterial({ color: 0x9CC4DA, side: T3.BackSide, transparent: true, opacity: .85 });
   M.shadow = new T3.MeshBasicMaterial({ map: shadowTex(), color: 0x000000, transparent: true, depthWrite: false, opacity: .5 });
   M.shadow.map.wrapS = M.shadow.map.wrapT = T3.ClampToEdgeWrapping;
   const fn = feltNormal(); fn.repeat.set(7, 7);
@@ -212,6 +236,7 @@ function roomEnv(){
 }
 
 /* ---------- scenes ---------- */
+const seatLines = [];
 let spot, hspot, hemiMain, turnSpot, felt, floor, rail, rackGroup, rackBars = [], tipDot, rackLedge;
 const plaques = [], lampCol = new T3.Color(0xFFE2B8), warmCol = new T3.Color(0xFFC98A);
 let marker = null, dealerDisc = null, warm = 0, warmT = 0, turnI = 0, turnIT = 0; const turnPos = new T3.Vector3(0, 0, 9), turnPosT = new T3.Vector3(0, 0, 9);
@@ -255,6 +280,11 @@ function buildTable(){
     g.add(base, top); g.position.set(x, .83, z); g.rotation.y = (s === 2 ? 0 : s * 90) * DEG; g.visible = false; scene.add(g);
     plaques.push({ g, base, top, c, tex, mat, key: '' });
   }
+  // a thin lacquer line along the inside edge of each seat's discards, in that seat's colour, so you can tell whose grid is whose
+  for (let s2 = 0; s2 < 4; s2++){
+    const len = DCOLS * DSTEP, m = new T3.Mesh(roundedBox(len, .05, .13, 1, .02), new T3.MeshPhysicalMaterial({ color: new T3.Color(SEAT[s2].lac), roughness: .45, clearcoat: .6, clearcoatRoughness: .3 }));
+    const [x, z] = seatXZ(s2, CIN - len / 2, CIN - .08); m.position.set(x, .026, z); m.rotation.y = s2 * 90 * DEG; m.receiveShadow = true; m.visible = false; scene.add(m); seatLines.push(m);
+  }
   // the round marker: a bone disc in a brass ring at the centre of the table
   {
     const g = new T3.Group();
@@ -262,7 +292,7 @@ function buildTable(){
     const c = document.createElement('canvas'); c.width = c.height = 512;
     const tex = new T3.CanvasTexture(c); tex.colorSpace = T3.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     const top = new T3.Mesh(new T3.CircleGeometry(2.08, 64), new T3.MeshPhysicalMaterial({ map: tex, roughness: .4, clearcoat: .4, clearcoatRoughness: .35, envMapIntensity: .4 })); top.rotation.x = -Math.PI / 2; top.position.y = .302; top.receiveShadow = true;
-    g.add(ring, top); g.visible = false; scene.add(g); marker = { g, top, c, tex, key: '' };
+    g.add(ring, top); g.visible = false; g.scale.setScalar(.6); scene.add(g); marker = { g, top, c, tex, key: '' };
     const dc = document.createElement('canvas'); dc.width = dc.height = 128; const dg = dc.getContext('2d');
     dg.fillStyle = '#E9DFC8'; dg.fillRect(0, 0, 128, 128); dg.fillStyle = '#B3261E'; dg.font = "84px TWbrush"; dg.textAlign = 'center'; dg.textBaseline = 'middle'; dg.fillText('莊', 64, 68);
     const dt = new T3.CanvasTexture(dc); dt.colorSpace = T3.SRGBColorSpace;
@@ -352,9 +382,20 @@ function pose(s, u, v, y, rx, yawExtra = 0, sc = 1, jit = 0){
 }
 const LIE = TH / 2, STAND = TL / 2, UP = 90 * DEG, DOWN = 180 * DEG;
 const SIDE_ORDER = [0, 3, 2, 1]; // walls clockwise from yours: you, left, top, right
+/* the table, laid out so every discard can be read: each seat throws into its own grid of six in the order thrown,
+   three rows deep, and the four grids interlock around the round marker. Melds lie on a band just behind the grid. */
+const DS = 1.45, DCOLS = 6, CIN = 1.45, DSTEP = TW * 1.02 * DS, DROW = TL * DS + .06;
+const DR = CIN + .05 + 3 * DROW, MS = 1.38, MV = DR + .25 + TL * MS / 2, MB0 = -(DR + .25 + TL * MS), MB1 = DR + .25;
+const WALL_V = 11.0, HAND_V = 12.4;
+function discardSlot(i, n){
+  const rows = Math.max(3, Math.ceil(n / DCOLS)), k = rows > 3 ? 3 / rows : 1; // a very long hand packs a fourth row into the same space
+  const row = Math.floor(i / DCOLS), col = i % DCOLS;
+  return { u: CIN - DCOLS * DSTEP * k + (col + .5) * DSTEP * k, v: CIN + .05 + TL * DS * k / 2 + row * DROW * k, s: DS * k };
+}
+let narrow = false; // a tall phone: the frame ends just past the side players' melds
 function wallPose(g, level, jit){
-  const side = SIDE_ORDER[Math.floor(g / 18)], j = g % 18;
-  return pose(side, 8.76 - j * 1.03 + 1.1, 9.6, LIE + level * (TH + .004), DOWN, 0, 1, jit);
+  const side = SIDE_ORDER[Math.floor(g / 18)], j = g % 18, v = narrow && side % 2 ? 11.9 : WALL_V;
+  return pose(side, 8.76 - j * 1.03 + 1.1 + (WALL_V - 9.6), v, LIE + level * (TH + .004), DOWN, 0, 1, jit);
 }
 function slotStack(k, dealer, handNo){
   const g0 = SIDE_ORDER.indexOf(dealer) * 18 + 3 + (handNo * 5) % 11;
@@ -364,18 +405,18 @@ function slotStack(k, dealer, handNo){
 /* ---------- hand layout (rack) ---------- */
 const HAND_GAP = .62, HSTEP = 1.04, LEAN = 13 * DEG;
 let handLayout = { rows: 1, width: 15.6 };
-function handSlots(n, hasDrawn){
-  // returns [{x, y, z, row}] for n tiles; the drawn tile (last) sits apart
-  const out = [];
+function handSlots(n, loose){
+  // returns [{x, y, z, row}] for n tiles; the last `loose` tiles (a fresh draw, or tiles not yet placed) sit apart on the right
+  loose = +loose || 0; const out = [], first = n - loose;
   if (rows === 1){
-    const w = (n - 1) * HSTEP + (hasDrawn ? HAND_GAP : 0);
-    for (let i = 0; i < n; i++) out.push({ x: -w / 2 + i * HSTEP + (hasDrawn && i === n - 1 ? HAND_GAP : 0), z: 0, row: 0 });
+    const w = (n - 1) * HSTEP + (loose && first > 0 ? HAND_GAP : 0);
+    for (let i = 0; i < n; i++) out.push({ x: -w / 2 + i * HSTEP + (loose && first > 0 && i >= first ? HAND_GAP : 0), z: 0, row: 0 });
   } else {
-    const top = Math.ceil((n - (hasDrawn ? 1 : 0)) / 2);
+    const top = Math.ceil((n - loose) / 2);
     for (let i = 0; i < n; i++){
-      const r = i < top ? 0 : 1, k = r ? i - top : i, cnt = r ? n - top : top;
-      const w = (cnt - 1) * HSTEP + (r && hasDrawn ? HAND_GAP : 0);
-      out.push({ x: -w / 2 + k * HSTEP + (r && hasDrawn && i === n - 1 ? HAND_GAP : 0), z: r ? 0 : -1.3, row: r });
+      const r = i < top ? 0 : 1, k = r ? i - top : i, cnt = r ? n - top : top, gap = r && loose && first > top;
+      const w = (cnt - 1) * HSTEP + (gap ? HAND_GAP : 0);
+      out.push({ x: -w / 2 + k * HSTEP + (gap && i >= first ? HAND_GAP : 0), z: r ? 0 : -1.3, row: r });
     }
   }
   for (const o of out){ o.y = (o.row === 0 && rows === 2 ? .98 : 0) + .26 + Math.cos(LEAN) * STAND + .01; }
@@ -445,28 +486,39 @@ function step(o, dt){
 }
 
 /* ---------- camera ---------- */
-let pushZoom = .14, camR = 70, push = 0, pushV = 0, pushT = 0, pushX = 0, pushZ = 0;
-let TILT = 20 * DEG;
-function placeCam(c, R, tx, tz, ox = 0, oz = 0){ c.position.set(tx + ox, R * Math.cos(TILT), tz + R * Math.sin(TILT) + oz); c.lookAt(tx, 0, tz); c.updateMatrixWorld(); }
-function fitCamera(){
-  const vh = Math.max(1, H - handH - stripH), aspect = W / vh, portrait = aspect < .9;
-  TILT = (portrait ? 15 : aspect > 1.9 ? 27 : 21) * DEG; // tall phone: nearly overhead so tiles stay large; wide: lower, so the table fills the width
+let pushZoom = .14, push = 0, pushV = 0, pushT = 0, pushX = 0, pushZ = 0, tableView = false;
+const cv = { R: 70, tilt: 20 * DEG, tx: 0, tz: 0 }, ct = { R: 70, tilt: 20 * DEG, tx: 0, tz: 0 };
+function placeCam(c, R, tx, tz, ox = 0, oz = 0, tilt = cv.tilt){ c.position.set(tx + ox, R * Math.cos(tilt), tz + R * Math.sin(tilt) + oz); c.lookAt(tx, 0, tz); c.updateMatrixWorld(); }
+/* what the camera must show. A tall phone frames the discards and melds edge to edge (the side walls and the
+   side players' hidden tiles fall outside the frame); a wide screen shows the whole table; table view looks straight down. */
+function frameBox(aspect){ // in table view a phone zooms onto the four discard grids
+  const portrait = aspect < .9;
+  if (mode !== 'game') return { x: 14.7, z0: -14.7, z1: 14.7, frac: portrait ? .99 : .8, tilt: portrait ? 15 : aspect > 1.9 ? 27 : 21 };
+  if (S && S.mode === 'lesson') return portrait ? { x: 7.6, z0: -13.5, z1: 10, frac: 1, tilt: 9 } : { x: 10.5, z0: -11, z1: 10, frac: .96, tilt: 16 };
+  if (tableView) return portrait ? { x: 7.75, z0: -7.75, z1: 7.75, frac: 1, tilt: .5 } : { x: 10.2, z0: -10.2, z1: 10.2, frac: .98, tilt: .5 };
+  if (portrait) return { x: 9.75, z0: -15.6, z1: 11.4, frac: 1, tilt: 13 };
+  return { x: 14.7, z0: -14.7, z1: 14.7, frac: .97, tilt: aspect > 1.9 ? 27 : 21 };
+}
+function fitCamera(snapNow = true){
+  const vh = Math.max(1, H - handH - stripH), aspect = W / vh, b = frameBox(aspect);
+  narrow = mode === 'game' && aspect < .9;
+  const tilt = b.tilt * DEG, tx = 0, tz = (b.z0 + b.z1) / 2;
   const test = new T3.PerspectiveCamera(28, aspect, 1, 600);
-  const ext = portrait ? 14.5 : 14.7, frac = portrait ? .99 : (mode === 'game' ? .97 : .8);
-  const pts = []; for (const x of [-ext, ext]) for (const z of [-ext, ext]) pts.push(new T3.Vector3(x, .8, z));
+  const pts = []; for (const x of [-b.x, b.x]) for (const z of [b.z0, b.z1]) for (const y of [0, .8]) pts.push(new T3.Vector3(x, y, z));
   let lo = 20, hi = 400;
   for (let i = 0; i < 40; i++){
-    const mid = (lo + hi) / 2; placeCam(test, mid, 0, 0); test.updateProjectionMatrix();
-    const fits = pts.every(p => { tmpV.copy(p).project(test); return Math.abs(tmpV.x) <= frac && Math.abs(tmpV.y) <= frac; });
+    const mid = (lo + hi) / 2; placeCam(test, mid, tx, tz, 0, 0, tilt); test.updateProjectionMatrix();
+    const fits = pts.every(p => { tmpV.copy(p).project(test); return Math.abs(tmpV.x) <= b.frac && Math.abs(tmpV.y) <= b.frac; });
     if (fits) hi = mid; else lo = mid;
   }
-  camR = hi;
+  Object.assign(ct, { R: hi, tilt, tx, tz }); if (snapNow) Object.assign(cv, ct);
   cam.aspect = aspect; cam.setViewOffset(W, vh, 0, 0, W, H); cam.updateProjectionMatrix();
-  updateCam();
+  updateCam(); wake();
 }
+function setTableView(on){ on = !!on; if (on === tableView || mode !== 'game') return tableView; tableView = on; fitCamera(false); return on; }
 function updateCam(){
-  const R = camR * (1 - pushZoom * push);
-  placeCam(cam, R, pushX * push, pushZ * push + (mode === 'home' ? (W < H ? 6 : 2.4) : 0), par.x, par.z);
+  const R = cv.R * (1 - pushZoom * push);
+  placeCam(cam, R, cv.tx + pushX * push, cv.tz + pushZ * push + (mode === 'home' ? (W < H ? 6 : 2.4) : 0), par.x, par.z, cv.tilt);
 }
 function fitHand(){
   if (!handH){ return; }
@@ -515,6 +567,7 @@ function frame(now){
     turnSpot.intensity = turnI * 1.5; turnSpot.target.position.copy(turnPos); turnSpot.position.set(turnPos.x * .8, 26, turnPos.z * .8);
     busy = true;
   }
+  if (Math.abs(cv.R - ct.R) > .01 || Math.abs(cv.tilt - ct.tilt) > .0005 || Math.abs(cv.tz - ct.tz) > .003){ const k = Math.min(1, dt * 4.2); cv.R += (ct.R - cv.R) * k; cv.tilt += (ct.tilt - cv.tilt) * k; cv.tz += (ct.tz - cv.tz) * k; cv.tx += (ct.tx - cv.tx) * k; busy = true; }
   if (Math.abs(par.x - par.tx) > .002 || Math.abs(par.z - par.tz) > .002){ const k = Math.min(1, dt * 4); par.x += (par.tx - par.x) * k; par.z += (par.tz - par.z) * k; busy = true; }
   for (let s = 0; s < sub; s++){
     for (const o of tiles){ if (o.xferAt && now >= o.xferAt){ o.xferAt = 0; doXfer(o); } if (step(o, h)) busy = true; }
@@ -598,24 +651,18 @@ function doXfer(o){
   if (o.pendingHand){ fromMainToHand(o, h); o.g.visible = false; o.shadow.visible = false; o.active = false; h.g.visible = true; h.tgt = null; setTarget(h, o.pendingHand, { keepPos: true, snd: 'place' }); o.pendingHand = null; }
 }
 
-/* ---------- labels for the other seats ---------- */
+/* ---------- page elements that follow the table ---------- */
 let labelsDirty = true;
-function positionLabels(){
-  labelsDirty = false;
-  if (!S || mode !== 'game') return;
-  const nums = document.getElementById('rackNums');
-  if (nums){
-    let html = '';
-    if (settings.labels && handH) for (const h of hand.values()){
-      if (!h.g.visible || h.t >= 27 || !h.tgt || (drag && drag.moved && drag.id === h.id)) continue;
-      if (rows === 2 && h.tgt.z < -.5) continue;
-      tmpV.set(h.pos.x, h.pos.y - Math.cos(LEAN) * STAND - .14, h.pos.z + .7).project(hcam);
-      html += `<span style="left:${((tmpV.x * .5 + .5) * W).toFixed(1)}px;top:${((-tmpV.y * .5 + .5) * H).toFixed(1)}px">${h.t % 9 + 1}</span>`;
-    }
-    if (nums._h !== html){ nums.innerHTML = html; nums._h = html; }
-  }
-}
+function positionLabels(){ labelsDirty = false; if (S && mode === 'game' && typeof placeFollowers === 'function') placeFollowers(); }
 
+/* ---------- your rack order, with a dragged tile shown where it would land ---------- */
+function rackOrder(){
+  const o = handOrder(); // { ids, loose } from the match
+  if (!(drag && drag.moved && drag.ins != null && o.ids.includes(drag.id))) return o;
+  const n = o.ids.length, placed = o.ids.slice(0, n - o.loose).filter(x => x !== drag.id), loose = o.ids.slice(n - o.loose).filter(x => x !== drag.id);
+  placed.splice(Math.min(drag.ins, placed.length), 0, drag.id);
+  return { ids: placed.concat(loose), loose: loose.length };
+}
 /* ---------- reading the game state ---------- */
 let lastHandKey = null, dealPhase = 0, lastDiscardId = null;
 const rimOn = new Set();
@@ -635,46 +682,46 @@ function sync(){
       // concealed hand
       const winner = S.turn === -1 && S.reveal === pi;
       const drawn = p.hand.find(x => x.id === p.drawnId);
-      const rest = (pi === 0 ? sortTiles(p.hand.filter(x => x.id !== p.drawnId)) : p.hand.filter(x => x.id !== p.drawnId));
-      const order = drawn ? rest.concat([drawn]) : rest;
       if (winner && S.groups){
         // the winning hand laid open, set by set
         const hid = S.groups.filter(g => g.hidden), stepW = pi % 2 ? 1.36 : 1.02, gap = .34;
         const total = hid.reduce((a, g) => a + g.ids.length * stepW, 0) + gap * Math.max(0, hid.length - 1);
         let u = -total / 2 + stepW / 2;
-        hid.forEach((g, gi) => { for (const id of g.ids){ want.set(id, { where: 'main', arc: true, snd: gi < S.revealN ? 'place' : null, pose: Object.assign(pose(pi, u, pi % 2 ? 12.2 : 12.45, LIE, gi < S.revealN ? 0 : DOWN, 0, 1, id), { ry: 0 }) }); u += stepW; } u += gap; });
+        hid.forEach((g, gi) => { for (const id of g.ids){ want.set(id, { where: 'main', arc: true, snd: gi < S.revealN ? 'place' : null, pose: Object.assign(pose(pi, u, 12.45, LIE, gi < S.revealN ? 0 : DOWN, 0, 1, id), { ry: 0 }) }); u += stepW; } u += gap; });
       } else if (pi === 0){
-        const slots = handSlots(order.length, !!drawn);
-        order.forEach((x, i) => want.set(x.id, { where: 'hand', i, pose: { x: slots[i].x, y: slots[i].y, z: slots[i].z, rx: UP - LEAN, ry: 0, rz: 0, sc: 1 } }));
+        // your rack, in the order you keep it; tiles not yet placed sit apart on the right
+        const ord = rackOrder(), slots = handSlots(ord.ids.length, ord.loose);
+        ord.ids.forEach((id, i) => want.set(id, { where: 'hand', i, pose: { x: slots[i].x, y: slots[i].y, z: slots[i].z, rx: UP - LEAN, ry: 0, rz: 0, sc: 1 } }));
       } else {
+        const rest = p.hand.filter(x => x.id !== p.drawnId), order = drawn ? rest.concat([drawn]) : rest;
         const n = order.length, step2 = winner ? (pi % 2 ? 1.36 : 1.02) : 1.02;
         order.forEach((x, i) => {
           const u = (i - (n - 1) / 2) * step2 + (drawn && i === n - 1 && !winner ? .3 : 0);
-          want.set(x.id, { where: 'main', arc: true, pose: winner ? Object.assign(pose(pi, u, 12.2, LIE, 0, 0, 1, x.id), { ry: 0 }) : pose(pi, u, 12.3, STAND, UP, 0, 1, x.id) });
+          want.set(x.id, { where: 'main', arc: true, hide: narrow && pi % 2 && !winner, pose: winner ? Object.assign(pose(pi, u, 12.45, LIE, 0, 0, 1, x.id), { ry: 0 }) : pose(pi, u, HAND_V, STAND, UP, 0, 1, x.id) });
         });
       }
-      // melds on the felt, from the right hand end
-      let cur = 8.9; const msc = .86;
+      // melds on the band behind the discards, from the right-hand end
+      let cur = MB1;
       for (const m of p.melds){
         m.tiles.forEach((x, i) => {
-          const side = m.claimed === x.id, w = (side ? TL : TW) * msc;
-          const down = m.concealed && m.type === 'kong' && (i === 0 || i === 3);
-          want.set(x.id, { where: 'main', arc: true, snd: 'claim', pose: pose(pi, cur - w / 2, 11.15 + (side ? .17 * msc : 0), LIE * msc, down ? DOWN : 0, side ? UP : 0, msc, x.id) });
+          const w = TW * MS, down = m.concealed && m.type === 'kong' && (i === 0 || i === 3);
+          want.set(x.id, { where: 'main', arc: true, snd: 'claim', pose: pose(pi, cur - w / 2, MV + (m.claimed === x.id ? .1 : 0), LIE * MS, down ? DOWN : 0, 0, MS, x.id) });
           cur -= w + .03;
         });
-        cur -= .32;
+        cur -= .2;
       }
-      let fc = -8.9; const fsc = .76;
-      for (const f of p.flowers){ want.set(f.id, { where: 'main', arc: true, snd: 'place', pose: pose(pi, fc + TW * fsc / 2, 11.15, LIE * fsc, 0, 0, fsc, f.id) }); fc += TW * fsc + .04; }
-      // discards in rows of six
+      let fc = MB0; const fsc = .9;
+      for (const f of p.flowers){ want.set(f.id, { where: 'main', arc: true, snd: 'place', pose: pose(pi, fc + TW * fsc / 2, MV, LIE * fsc, 0, 0, fsc, f.id) }); fc += TW * fsc + .04; }
+      // discards: a grid of six per row, in the order thrown
       p.discards.forEach((d, i) => {
-        let row = Math.floor(i / 6), col = i % 6;
-        if (i >= 24){ row = 1 + Math.floor((i - 24) / 3) % 3; col = 6 + (i - 24) % 3; }
+        const sl = discardSlot(i, p.discards.length);
         const lifted = S.ui && S.ui.mode === 'claim' && S.lastDiscard && S.lastDiscard.id === d.id;
-        want.set(d.id, { where: 'main', arc: pi !== 0, snd: 'place', pose: pose(pi, (col - 2.5) * 1.02, 3.8 + row * 1.36, LIE + (lifted ? .34 : 0), 0, 0, 1, d.id) });
+        want.set(d.id, { where: 'main', arc: pi !== 0, snd: 'place', pose: pose(pi, sl.u, sl.v, LIE * sl.s + (lifted ? .34 : 0), 0, 0, sl.s, d.id) });
       });
     });
   }
+  // the lesson lays loose tiles straight onto the cloth
+  if (S.lay) for (const L of S.lay){ want.set(L.id, { where: 'main', arc: true, snd: L.snd === undefined ? 'place' : L.snd, pose: { x: L.x, y: LIE * (L.s || 1) + (L.lift || 0), z: L.z, rx: L.down ? DOWN : 0, ry: L.ry || 0, rz: 0, sc: L.s || 1 } }); }
   // apply
   let dealRank = 0;
   for (const o of tiles){
@@ -694,7 +741,7 @@ function sync(){
     if (w.where === 'main'){
       if (o.where === 'hand' && h && h.g.visible){ o.g.visible = true; fromHandToMain(h, o); h.g.visible = false; h.active = false; h.tgt = null; o.tgt = null; setTarget(o, w.pose, { keepPos: true, snd: w.snd || 'place' }); }
       else {
-        const was = o.tgt; o.g.visible = true;
+        const was = o.tgt; o.g.visible = !w.hide;
         if (!was || moved(was, w.pose)) setTarget(o, w.pose, { hop: !!was && Math.cos(was.rx) < -.5 && Math.cos(w.pose.rx) > .5, arc: !!was && w.arc, snd: was ? (dealPhase === 2 ? 'deal' : w.snd) : null, keepPos: !!was, wait: dealPhase === 2 && was ? (S.slot.get(o.id) || 0) * .016 : 0 });
       }
       o.where = 'main'; o.pendingHand = null; o.xferAt = 0;
@@ -706,19 +753,26 @@ function sync(){
       } else if (o.pendingHand){ o.pendingHand = w.pose; }
       else {
         hh.g.visible = true;
-        const was = hh.tgt; if (!was || moved(was, w.pose, true)) setTarget(hh, Object.assign({}, w.pose), { keepPos: !!was });
+        const was = hh.tgt; if (!(drag && drag.moved && drag.id === o.id) && (!was || moved(was, w.pose, true))) setTarget(hh, Object.assign({}, w.pose), { keepPos: !!was });
       }
       o.where = 'hand';
     }
   }
   // highlights: last discard on the table; selection, hover and hint on the rack
-  const ld = S.lastDiscard ? S.lastDiscard.id : null;
-  if (ld !== lastDiscardId){ if (lastDiscardId !== null) tiles[lastDiscardId].rim.visible = false; if (ld !== null) tiles[ld].rim.visible = true; lastDiscardId = ld; }
-  if (ld !== null) tiles[ld].rim.material = S.ui && S.ui.mode === 'claim' ? M.rim : M.rimSoft;
+  // the newest discard keeps a soft rim until the next one; tiles matching the one you hold up get a cool rim, so dead tiles show
+  const ld = S.lastDiscard ? S.lastDiscard.id : null, dt = typeof deadType === 'function' ? deadType() : null, seen = new Set();
+  if (dt != null) for (const p of S.players){ for (const d of p.discards) if (d.t === dt) seen.add(d.id); for (const m of p.melds) m.tiles.forEach((x, i) => { if (x.t === dt && !(m.concealed && m.type === 'kong' && (i === 0 || i === 3))) seen.add(x.id); }); }
+  for (const o of tiles){
+    const mat = o.id === ld ? (S.ui && S.ui.mode === 'claim' ? M.rim : M.rimSoft) : seen.has(o.id) ? M.rimDead : null;
+    o.rim.visible = !!mat && o.g.visible; if (mat) o.rim.material = mat;
+  }
+  lastDiscardId = ld;
   // plaques, the round marker, the dealer's disc and the lamps
-  for (let s = 0; s < 4; s++){ plaques[s].g.visible = true; drawPlaque(s); }
-  marker.g.visible = true; drawMarker();
-  { const [dx, dz] = seatXZ(S.dealer, S.dealer === 2 ? 5.1 : -5.1, 13.95); dealerDisc.visible = true; dealerDisc.position.set(dx, .86, dz); }
+  const lesson = S.mode === 'lesson';
+  for (let s = 0; s < 4; s++){ plaques[s].g.visible = !lesson; if (!lesson) drawPlaque(s); }
+  marker.g.visible = !lesson; if (!lesson) drawMarker();
+  for (const l of seatLines) l.visible = !lesson;
+  { const [dx, dz] = seatXZ(S.dealer, S.dealer === 2 ? 5.1 : -5.1, 13.95); dealerDisc.visible = !lesson; dealerDisc.position.set(dx, .86, dz); }
   const myMove = S.turn === 0 && S.ui && (S.ui.mode === 'discard' || S.ui.mode === 'claim');
   warmT = myMove ? 1 : 0; turnIT = S.turn >= 0 && dealPhase === 0 ? 1 : 0;
   if (S.turn >= 0){ const [tx, tz] = seatXZ(S.turn, 0, 8.2); turnPosT.set(tx, 0, tz); }
@@ -735,14 +789,14 @@ function updateHandFx(){
   let tipId = null;
   if (can && settings.coach && S.ui_tip != null){
     const me = S.players[0], drawn = me.hand.find(x => x.id === me.drawnId);
-    if (drawn && drawn.t === S.ui_tip) tipId = drawn.id; else { const f = sortTiles(me.hand.filter(x => x.id !== me.drawnId)).find(x => x.t === S.ui_tip); if (f) tipId = f.id; }
+    if (drawn && drawn.t === S.ui_tip) tipId = drawn.id; else { const f = rackOrder().ids.find(id => typeOf(id) === S.ui_tip); if (f != null) tipId = f; }
   }
   tipDot.visible = false;
   for (const h of hand.values()){
     if (!h.g.visible || !h.tgt || (drag && drag.moved && drag.id === h.id)) continue;
     const base = h.base || (h.base = {});
     if (!h.tgt._b){ h.tgt._b = { y: h.tgt.y, rx: h.tgt.rx }; }
-    const b = h.tgt._b, sel = S.selected === h.id, hint = S.hintId === h.id, hov = can && (hoverId === h.id || focusId === h.id);
+    const b = h.tgt._b, pk = ui.mode === 'chowpick' && ui.need && ui.need.has(h.t), sel = S.selected === h.id || pk, hint = S.hintId === h.id, hov = (can || ui.mode === 'chowpick') && (hoverId === h.id || focusId === h.id);
     const y = b.y + (sel ? .12 : hint ? .1 : hov ? .04 : 0), rx = b.rx - (sel ? 10 * DEG : 0);
     if (Math.abs(h.tgt.y - y) > 1e-4 || Math.abs(h.tgt.rx - rx) > 1e-4){ h.tgt.y = y; h.tgt.rx = rx; h.active = true; }
     h.rim.visible = sel || hint; h.rim.material = sel ? M.rim : M.rimSoft;
@@ -778,7 +832,7 @@ function stillLife(){
     o.g.visible = true; o.tgt = p; snap(o);
   }
   lastHandKey = null; lastDiscardId = null;
-  for (const P of plaques) P.g.visible = false; if (marker){ marker.g.visible = false; dealerDisc.visible = false; } turnIT = 0; warmT = 0;
+  for (const P of plaques) P.g.visible = false; for (const l of seatLines) l.visible = false; if (marker){ marker.g.visible = false; dealerDisc.visible = false; } turnIT = 0; warmT = 0;
 }
 
 /* ---------- tables: felt, rail, tile backs and the lamp ---------- */
@@ -802,35 +856,91 @@ function handPoint(ev, h){
   const n = hcam.getWorldDirection(new T3.Vector3()), plane = new T3.Plane().setFromNormalAndCoplanarPoint(n, drag.origin);
   return ray.ray.intersectPlane(plane, new T3.Vector3());
 }
+/* drag along the rack to rearrange, drag up and out onto the table to throw */
+const canThrow = () => S && S.ui && S.ui.mode === 'discard' && (typeof lessonAllows !== 'function' || lessonAllows('throw'));
+const canArrange = () => S && S.turn !== -1 && mode === 'game' && handH > 0 && !(S.ui && (S.ui.mode === 'read' || S.ui.mode === 'chowpick')) && (typeof lessonAllows !== 'function' || lessonAllows('arrange'));
 function dragStart(ev){
-  if (!S || !S.ui || S.ui.mode !== 'discard') return;
+  if (!canArrange()) return;
   const id = pick(ev); if (id === null) return;
   const h = hand.get(id); if (!h || !h.tgt) return;
   h.vel.y += 1.6; h.active = true; wake(); // the tile answers the press at once
-  drag = { id, x0: ev.clientX, y0: ev.clientY, moved: false, origin: h.pos.clone(), home: Object.assign({}, h.tgt), lastY: ev.clientY, lastT: performance.now(), vy: 0 };
+  drag = { id, x0: ev.clientX, y0: ev.clientY, moved: false, origin: h.pos.clone(), home: Object.assign({}, h.tgt), lastY: ev.clientY, lastT: performance.now(), vy: 0, ins: null, out: false };
   try { canvas.setPointerCapture(ev.pointerId); } catch(e){}
+}
+function insertAt(ev){
+  // which gap in the rack is nearest the pointer
+  const o = handOrder(), n = o.ids.length, others = o.ids.slice(0, n - o.loose).filter(x => x !== drag.id).length;
+  const loose = o.ids.slice(n - o.loose).filter(x => x !== drag.id).length, slots = handSlots(others + 1 + loose, loose);
+  let best = 0, bd = 1e9;
+  for (let k = 0; k <= others; k++){ const sl = slots[k], p = screenXY(hcam, sl.x, sl.y, sl.z), d = Math.abs(p.x - ev.clientX) + (rows === 2 ? Math.abs(p.y - ev.clientY) * .8 : 0); if (d < bd){ bd = d; best = k; } }
+  return best;
 }
 function dragMove(ev){
   if (!drag) return false;
   if (!drag.moved && Math.hypot(ev.clientX - drag.x0, ev.clientY - drag.y0) < 9) return true;
   const h = hand.get(drag.id); if (!h){ drag = null; return false; }
-  if (!drag.moved){ drag.moved = true; snd('pick'); h.rim.visible = true; h.rim.material = M.rim; }
+  if (!drag.moved){ drag.moved = true; cancelHold(); snd('pick'); h.rim.visible = true; h.rim.material = M.rim; }
   const p = handPoint(ev, h); if (!p) return true;
   const now = performance.now(), dtm = Math.max(1, now - drag.lastT);
   drag.vy = drag.vy * .6 + (ev.clientY - drag.lastY) / dtm * .4; drag.lastY = ev.clientY; drag.lastT = now;
-  const out = ev.clientY < H - handH - 4;
-  h.tgt = { x: p.x, y: p.y + .15, z: p.z, rx: UP - LEAN - (out ? 34 * DEG : 8 * DEG), ry: 0, rz: Math.max(-.2, Math.min(.2, (ev.clientX - drag.x0) * -.0012)), sc: out ? 1.04 : 1 };
+  const out = ev.clientY < H - handH - 4 && canThrow();
+  const ins = out ? null : insertAt(ev);
+  if (ins !== drag.ins || out !== drag.out){ drag.ins = ins; drag.out = out; sync(); }
+  const y = out ? p.y + .15 : Math.min(p.y + .15, drag.home.y + (rows === 2 ? 1.4 : .5));
+  h.tgt = { x: p.x, y, z: p.z, rx: UP - LEAN - (out ? 34 * DEG : 8 * DEG), ry: 0, rz: Math.max(-.2, Math.min(.2, (ev.clientX - drag.x0) * -.0012)), sc: out ? 1.04 : 1.03 };
   h.active = true; wake(); return true;
 }
 function dragEnd(ev){
   if (!drag) return;
-  const d = drag, h = hand.get(d.id); drag = null;
-  if (!d.moved || !h) return;
+  const d = drag, h = hand.get(d.id);
+  if (!d.moved || !h){ drag = null; return; }
   noClick = performance.now() + 350;
-  const out = ev.clientY < H - handH - 4 || d.vy < -.55;
+  const out = (ev.clientY < H - handH - 4 || d.vy < -.55) && canThrow();
   h.rim.visible = false;
-  if (ev.type === 'pointerup' && out && tryDiscard(d.id)) return;
-  h.tgt = null; setTarget(h, d.home, { keepPos: true }); if (S) render();
+  if (ev.type === 'pointerup' && out){ drag = null; if (tryDiscard(d.id)) return; }
+  else if (ev.type === 'pointerup' && d.ins != null && typeof onReorder === 'function'){ const ins = d.ins; drag = null; h.tgt = null; setTarget(h, Object.assign({}, d.home), { keepPos: true }); onReorder(d.id, ins); return; }
+  drag = null; h.tgt = null; setTarget(h, d.home, { keepPos: true }); if (S) render();
+}
+/* press and hold any tile to ask what it is; pinch or scroll the table for the view from above */
+let holdTimer = 0; const touches = new Map(); let pinch0 = 0, wheelAt = 0;
+function cancelHold(){ if (holdTimer){ clearTimeout(holdTimer); holdTimer = 0; } }
+function holdHit(x, y){
+  const ev = { clientX: x, clientY: y }, id = pick(ev);
+  if (id !== null) return { kind: 'tile', id, t: typeOf(id), own: true };
+  const m = pickMain(ev); if (m && m.kind === 'tile' && m.faceUp) return Object.assign(m, { t: typeOf(m.id) });
+  return m && m.kind === 'tile' ? Object.assign(m, { t: null }) : null;
+}
+function onDown(ev){
+  touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  if (touches.size === 2){ cancelHold(); if (drag){ const h = hand.get(drag.id); if (h && drag.moved){ h.tgt = null; setTarget(h, drag.home, { keepPos: true }); } drag = null; sync(); } const [a, b] = [...touches.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); return; }
+  cancelHold();
+  const x0 = ev.clientX, y0 = ev.clientY;
+  holdTimer = setTimeout(() => {
+    holdTimer = 0; if (touches.size > 1 || (drag && drag.moved)) return;
+    const hit = holdHit(x0, y0); if (!hit) return;
+    if (drag){ const h = hand.get(drag.id); if (h){ h.tgt = null; setTarget(h, drag.home, { keepPos: true }); } drag = null; }
+    noClick = performance.now() + 600;
+    if (typeof onHold === 'function') onHold(hit, x0, y0);
+  }, window.TW_holdMs || 520);
+  dragStart(ev);
+}
+function onMove(ev){
+  if (touches.has(ev.pointerId)) touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  if (touches.size === 2 && pinch0 > 0){
+    const [a, b] = [...touches.values()], r = Math.hypot(a.x - b.x, a.y - b.y) / pinch0;
+    if (r > 1.18 || r < .85){ const on = r > 1; pinch0 = 0; if (on !== tableView && typeof onTableView === 'function') onTableView(on); }
+    return;
+  }
+  if (holdTimer){ const t = touches.get(ev.pointerId); if (t && drag && Math.hypot(ev.clientX - drag.x0, ev.clientY - drag.y0) > 9) cancelHold(); }
+  if (dragMove(ev) && drag && drag.moved) return;
+  if (ev.pointerType !== 'mouse') return;
+  const id = pick(ev); if (id !== hoverId){ hoverId = id; canvas.style.cursor = id !== null && canArrange() ? (canThrow() ? 'pointer' : 'grab') : ''; updateHandFx(); }
+}
+function onUp(ev){ touches.delete(ev.pointerId); if (touches.size < 2) pinch0 = 0; cancelHold(); dragEnd(ev); }
+function onWheel(ev){
+  if (mode !== 'game' || !S) return;
+  ev.preventDefault(); const now = performance.now(); if (now - wheelAt < 350 || Math.abs(ev.deltaY) < 4) return; wheelAt = now;
+  const on = ev.deltaY < 0; if (on !== tableView && typeof onTableView === 'function') onTableView(on);
 }
 function pickMain(ev){
   if (mode !== 'game' || !S) return null;
@@ -855,6 +965,7 @@ function renderTileImages(){
   const catcher = new T3.Mesh(new T3.PlaneGeometry(6, 6), new T3.ShadowMaterial({ opacity: .28 })); catcher.rotation.x = -Math.PI / 2; catcher.receiveShadow = true; sc.add(catcher);
   const c = new T3.PerspectiveCamera(14.5, iw / ih, .5, 50); c.position.set(0, 7.4, 3.1); c.lookAt(0, .3, .02);
   const m = makeTileMesh(0, false); m.g.position.y = LIE; sc.add(m.g);
+  const hadHelpers = helpersOn; if (hadHelpers) composeAtlas(false);
   const oldPR = renderer.getPixelRatio(); renderer.setPixelRatio(1); renderer.setSize(iw, ih, false);
   renderer.setClearColor(0x000000, 0);
   for (let t = 0; t < 42; t++){
@@ -863,6 +974,7 @@ function renderTileImages(){
     IMG[t] = canvas.toDataURL('image/png');
   }
   sc.remove(m.g); renderer.setPixelRatio(oldPR); renderer.setClearColor(0x000000, 1);
+  if (hadHelpers) composeAtlas(true);
   if (ok) resize();
 }
 
@@ -893,13 +1005,16 @@ async function init(host){
   ok = true; applyTier();
   window.addEventListener('pointermove', e => { if (e.pointerType !== 'mouse') return; par.tx = (e.clientX / W - .5) * -.7; par.tz = (e.clientY / H - .5) * -.45; wake(); });
   window.addEventListener('resize', resize);
-  canvas.addEventListener('pointerdown', dragStart);
-  canvas.addEventListener('pointerup', dragEnd); canvas.addEventListener('pointercancel', dragEnd);
-  canvas.addEventListener('pointermove', e => { if (dragMove(e) && drag && drag.moved) return; const id = pick(e); if (id !== hoverId){ hoverId = id; canvas.style.cursor = id !== null && S && S.ui && S.ui.mode === 'discard' ? 'pointer' : ''; updateHandFx(); } });
+  canvas.addEventListener('pointerdown', onDown);
+  canvas.addEventListener('pointerup', onUp); canvas.addEventListener('pointercancel', onUp);
+  canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerleave', () => { hoverId = null; updateHandFx(); });
-  canvas.addEventListener('click', e => { if (performance.now() < noClick) return; const id = pick(e); if (id !== null){ const b = document.querySelector(`#hand [data-id="${id}"]`); if (b) b.click(); return; } const hit = pickMain(e); if (hit) explainHit(hit); else if (S && S.ui && S.ui.mode === 'read') S.ui.resolve(); else if (e.clientY < H - handH - stripH) toggleLook(); });
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('contextmenu', e => { if (mode === 'game') e.preventDefault(); });
+  canvas.addEventListener('click', e => { if (performance.now() < noClick) return; const id = pick(e); if (id !== null){ const b = document.querySelector(`#hand [data-id="${id}"]`); if (b) b.click(); return; } const hit = pickMain(e); if (hit) explainHit(hit); else if (S && S.ui && S.ui.mode === 'read') S.ui.resolve(); });
   setMode('home');
   window.TW_V = { tiles, hand, cam, hcam, scene, hscene, renderer, M, spot, hspot, get handH(){ return handH; } };
+  window.TW_dragdbg = () => ({ drag: drag && { id: drag.id, moved: drag.moved, ins: drag.ins, out: drag.out }, canArrange: canArrange(), canThrow: canThrow(), handH, H });
   return true;
 }
 function setMode(m){
@@ -917,11 +1032,7 @@ async function deal(){
     await sleep(1050);
   } finally { dealPhase = 0; }
 }
-let look = false;
-/* on a tall phone: tap the cloth to lean in over the discards, tap again to sit back */
-function toggleLook(){ if (!(W < H) || mode !== 'game') return false; look = !look; pushX = 0; pushZ = .6; pushZoom = .36; pushT = look ? 1 : 0; wake(); return look; }
 function pushTo(pi, amt = 1){
-  look = false;
   const [x, z] = seatXZ(pi, 0, 8); pushX = x * .45; pushZ = z * .45; pushT = amt;
   // on a tall phone the result slip covers the lower table: slide the table up instead of pushing in
   if (W < 720 && W < H){ pushX = 0; pushZ = pi === 0 ? 13 : pi === 2 ? 3 : 8; pushT = 1; pushZoom = 0; } else pushZoom = .14;
@@ -930,5 +1041,19 @@ function pushTo(pi, amt = 1){
 function nudge(id){ const h = hand.get(id); if (h && h.tgt){ h.rvel.z += 2.4; h.active = true; wake(); } }
 function handXY(id){ const h = hand.get(id); if (!h || !h.g.visible) return null; const q = h.tgt || h.pos; return screenXY(hcam, q.x, q.y + STAND, q.z); }
 function seatXY(pi, v = 7){ const [x, z] = seatXZ(pi, 0, v); return screenXY(cam, x, 0, z); }
-return { init, sync, setMode, deal, pushTo, nudge, applyTheme, renderTileImages, handXY, seatXY, slow(ms = 520){ slowUntil = performance.now() + ms; wake(); }, IMG, get ok(){ return ok; }, setFocus(id){ focusId = id; updateHandFx(); }, fx: updateHandFx, invalidate, positionLabels, setCos(o){ cos = Object.assign({ back: null, lamp: null, tint: 0xffffff, light: false }, o); if (ok && theme) applyTheme(theme); }, thump(a = 1, lamp = false){ if (!ok) return; settleV -= a * 1.1; if (lamp) flick = 1; wake(); }, resize, setTier, get tier(){ return tier; }, get gpu(){ return window.TW_gpu; } };
+/* the match waits for a thrown tile to come to rest before anything else happens */
+function whenLanded(id, max = 1400){
+  return new Promise(res => {
+    const o = tiles[id], t0 = performance.now();
+    if (!o || autotest || window.TW_fast) return res();
+    const iv = setInterval(() => {
+      const tg = o.tgt, err = tg ? Math.abs(tg.x - o.pos.x) + Math.abs(tg.y - o.pos.y) + Math.abs(tg.z - o.pos.z) : 0;
+      if (!o.active || (!o.via && err < .04) || performance.now() - t0 > max){ clearInterval(iv); res(); }
+    }, 24);
+  });
+}
+function tileXY(id){ const o = tiles[id]; if (!o || !o.g.visible) return null; const q = o.tgt || o.pos; return screenXY(cam, q.x, q.y, q.z); }
+function tilePx(id){ const o = tiles[id]; if (!o || !o.g.visible) return 0; o.g.updateMatrixWorld(); const a = new T3.Vector3(-.5, .35, 0).applyMatrix4(o.g.matrixWorld).project(cam), b = new T3.Vector3(.5, .35, 0).applyMatrix4(o.g.matrixWorld).project(cam); return Math.hypot((a.x - b.x) * W / 2, (a.y - b.y) * H / 2); }
+function pointXY(x, z, y = 0){ return screenXY(cam, x, y, z); }
+return { init, sync, setMode, setTableView, get tableView(){ return tableView; }, setHelpers, whenLanded, tileXY, tilePx, pointXY, seatXZ, rackOrder, deal, pushTo, nudge, applyTheme, renderTileImages, handXY, seatXY, slow(ms = 520){ slowUntil = performance.now() + ms; wake(); }, IMG, get ok(){ return ok; }, setFocus(id){ focusId = id; updateHandFx(); }, fx: updateHandFx, invalidate, positionLabels, setCos(o){ cos = Object.assign({ back: null, lamp: null, tint: 0xffffff, light: false }, o); if (ok && theme) applyTheme(theme); }, thump(a = 1, lamp = false){ if (!ok) return; settleV -= a * 1.1; if (lamp) flick = 1; wake(); }, resize, setTier, get tier(){ return tier; }, get gpu(){ return window.TW_gpu; } };
 })();

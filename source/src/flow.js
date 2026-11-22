@@ -3,7 +3,15 @@
    hand. Dealing, claiming and scoring call the same rule functions as
    before; nothing here decides what a hand is worth.
    ========================================================= */
-function speed(){ return autotest ? 0 : settings.fast ? .4 : 1; }
+/* three paces. Relaxed is the default: an opponent's whole turn, from one discard to the next, takes about 1.2 to 1.8 s,
+   and the thrown tile always comes to rest and stays still before anyone else moves. */
+const PACE = {
+  relaxed: { think: [350, 850], hold: 420, f: 1.15, window: 1700 },
+  normal:  { think: [300, 600],  hold: 260, f: 1,    window: 1250 },
+  fast:    { think: [170, 380],  hold: 110, f: .65,  window: 900 }
+};
+const pace = () => PACE[settings.pace] || PACE.relaxed;
+function speed(){ return autotest ? 0 : pace().f; }
 function sleep(ms){
   const my = token;
   return new Promise((res, rej) => setTimeout(() => (my === token ? res() : rej(ABORT)), ms * speed()));
@@ -22,7 +30,7 @@ function newMatch(opts = {}){
     })),
     dealer: 0, handNo: 0, totalHands: mode === 'play' ? settings.length : 1, wall: [], turn: 0,
     lastDiscard: null, ui: {}, selected: null, matchXp: 0, started: Date.now(), hintId: null,
-    fed: [], rs: null, wasReady: false, say: null, callout: null
+    fed: [], rs: null, wasReady: false, say: null, callout: null, recent: [], newest: null, order: null, claimWin: null
   };
 }
 function allTiles(){
@@ -55,13 +63,14 @@ function setupHand(){
   S.roundWind = Math.floor(S.handNo / 4) % 4;
   S.lastDiscard = null; S.turn = S.dealer; S.ui = {}; S.selected = null; S.hintId = null;
   S.fed = []; S.wasReady = false; S.say = null; S.callout = null; S.warned = null; S.tutStep = 0; S.everReady = false; S.introShown = false;
+  S.recent = []; S.newest = null; S.claimWin = null; S.order = sortedIds(S.players[0].hand); S.fresh = [];
 }
 
 /* ---------------- saving: a match is always exactly where you left it ---------------- */
 function saveResume(loop){
   if (autotest || S.mode !== 'play') return;
   const o = { v:2, loop, dealer:S.dealer, handNo:S.handNo, totalHands:S.totalHands, diff:S.diff, matchXp:S.matchXp, wall:S.wall, roundWind:S.roundWind,
-    slot:[...S.slot], rs:S.rs, fed:S.fed, lastDiscard:S.lastDiscard, wasReady:S.wasReady, elapsed: Date.now() - S.started,
+    slot:[...S.slot], rs:S.rs, fed:S.fed, lastDiscard:S.lastDiscard, wasReady:S.wasReady, elapsed: Date.now() - S.started, order:S.order, recent:S.recent,
     players: S.players.map(p => ({ name:p.name, style:p.style, score:p.score, hand:p.hand, melds:p.melds, discards:p.discards, flowers:p.flowers, drawnId:p.drawnId })) };
   try { localStorage.setItem(RKEY, JSON.stringify(o)); } catch(e){}
 }
@@ -78,7 +87,7 @@ function restore(r){
   Object.assign(S, { dealer:r.dealer, handNo:r.handNo, totalHands:r.totalHands, diff:r.diff, matchXp:r.matchXp || 0, started: Date.now() - (r.elapsed || 0) });
   r.players.forEach((q, i) => Object.assign(S.players[i], q, { isHuman: i === 0 }));
   if (!r.next){
-    Object.assign(S, { wall:r.wall, roundWind:r.roundWind, slot:new Map(r.slot), rs:r.rs, fed:r.fed || [], lastDiscard:null, wasReady:false, slotKey:(S.slotKey || 0) + 1, reveal:null, groups:null, revealN:0, tutStep:0 });
+    Object.assign(S, { wall:r.wall, roundWind:r.roundWind, slot:new Map(r.slot), rs:r.rs, fed:r.fed || [], lastDiscard:null, wasReady:false, slotKey:(S.slotKey || 0) + 1, reveal:null, groups:null, revealN:0, tutStep:0, order: r.order || null, recent: r.recent || [] });
     // a discard still lying in front of its thrower was not yet resolved: the loop replays from before that turn
   }
 }
@@ -103,17 +112,18 @@ async function runMatch(loop){
 
 async function playHand(st){
   let turn = st ? st.turn : S.dealer, needDraw = st ? st.needDraw : true, kongDraw = st ? st.kongDraw : false;
-  if (!st && !autotest && !profile.lookTip && innerWidth < innerHeight && S.mode !== 'tut' && !(profile.intro >= 1 && profile.intro <= 3)){ profile.lookTip = true; save(); say('Tap the cloth to lean in over the table. Tap again to sit back.', 5200); }
+  if (!st && !autotest && !profile.viewTip && S.mode === 'play' && !(profile.intro >= 1 && profile.intro <= 3)){ profile.viewTip = true; save(); say('Table, by the menu, looks straight down on every discard. Press and hold any tile to see what it is.', 5600); }
   if (!st && !autotest) await introIdea(); // hands two to four open with one new idea, before anyone moves
   while (true){
     const p = S.players[turn];
     S.turn = turn;
-    saveResume({ turn, needDraw, kongDraw });
-    const think = 300 + Math.random() * 340; // opponents take between 0.46 and 0.8 s in all
+    S.resumeAt = { turn, needDraw, kongDraw }; saveResume(S.resumeAt);
+    const pc = pace(), think = (pc.think[0] + Math.random() * (pc.think[1] - pc.think[0])) / pc.f; // sleep() scales it back by the pace
     if (needDraw){
       const tile = drawTile(p, kongDraw);
       if (!tile) return endDraw();
-      p.hand.push(tile); p.drawnId = tile.id;
+      p.hand.push(tile); p.drawnId = tile.id; // the enlarged copy of the last discard stays until the next one replaces it
+      if (p.isHuman) noteNew(tile.id);
       if (p.isHuman) snd('draw');
       render();
       if (!p.isHuman) await sleep(think * .45);
@@ -136,16 +146,21 @@ async function playHand(st){
     }
     const d = removeById(p, action.id);
     p.drawnId = null; sortTiles(p.hand);
-    p.discards.push(d); S.lastDiscard = { id:d.id, from:turn };
+    p.discards.push(d); S.lastDiscard = { id:d.id, from:turn }; S.newest = { id:d.id, t:d.t, from:turn };
+    S.recent.push({ id:d.id, t:d.t, from:turn }); if (S.recent.length > 4) S.recent.shift();
     S.selected = null; S.hintId = null; S.warned = null; kongDraw = false;
     if (p.isHuman){ haptic(10); readyCheck(); }
     render();
     if (autotest) for (const q of S.players){ if (q.hand.length + 3 * q.melds.length !== 13) (window.TW_bad = window.TW_bad || []).push([q.name, q.hand.length, q.melds.length]); }
     if (S.mode === 'tut' && p.isHuman && S.wasReady) await tutSay('You are one tile from winning. The tiles you wait for sit here beside your rack, with how many of each are still unseen.', 'ghosts');
-    await sleep(p.isHuman ? 240 : 160);
-    const claim = await resolveClaims(turn, d);
+    // nothing moves while the tile is in the air; then it is held still long enough to read
+    await V.whenLanded(d.id);
+    let mine = undefined;
+    if (!p.isHuman && callLevel() === 'expert' && !autotest && S.players[0].isHuman && S.mode !== 'tut' && S.mode !== 'lesson') mine = await expertWindow(turn, d);
+    else await sleep(p.isHuman ? 240 : pace().hold / pace().f);
+    const claim = await resolveClaims(turn, d, mine);
     if (!claim){ turn = (turn + 1) % 4; needDraw = true; continue; }
-    p.discards.pop(); S.lastDiscard = null;
+    p.discards.pop(); S.lastDiscard = null; S.newest = null; S.recent = S.recent.filter(r => r.id !== d.id);
     if (claim.type === 'ron'){
       S.players[claim.pi].hand.push(d);
       return endWin(claim.pi, false, { from:turn, lastTile: S.wall.length === 0, winId:d.id });
@@ -159,7 +174,7 @@ async function playHand(st){
   }
 }
 
-async function resolveClaims(from, d){
+async function resolveClaims(from, d, mine){
   const entries = [];
   for (let k = 1; k < 4; k++){
     const pi = (from + k) % 4, o = claimOptions(pi, d.t, from);
@@ -170,7 +185,7 @@ async function resolveClaims(from, d){
   for (const e of entries){
     const human = S.players[e.pi].isHuman;
     if (S.mode === 'tut' && !human) continue; // the guided hand keeps the other seats quiet
-    const dec = human ? await humanClaim(e.o, d, from) : aiClaim(e.pi, d.t, e.o);
+    const dec = human ? (mine !== undefined ? mine : await humanClaim(e.o, d, from)) : aiClaim(e.pi, d.t, e.o);
     if (dec) decisions.push(Object.assign({ pi:e.pi, k:e.k }, dec));
   }
   if (!decisions.length) return null;
@@ -183,7 +198,7 @@ async function resolveClaims(from, d){
 function waitHuman(ui){
   return new Promise((res, rej) => {
     const my = token;
-    S.ui = Object.assign({}, ui, { resolve: v => { S.ui = {}; S.callout = null; if (my !== token) rej(ABORT); else res(v); } });
+    S.ui = Object.assign({}, ui, { resolve: v => { S.ui = {}; S.callout = null; S.whyOn = null; if (my !== token) rej(ABORT); else res(v); } });
     S.callout = ui.callout || null;
     render();
     if (ui.mode === 'discard') setTimeout(() => { const f = document.querySelector('#hand .tile.drawn') || document.querySelector('#hand .tile:last-child'); if (f && document.activeElement && document.activeElement.closest && document.activeElement.closest('#hand')) f.focus(); }, 0);
@@ -193,33 +208,117 @@ function humanTurn(so){
   const actions = [];
   if (so.win) actions.push({ label:'Win', kind:'win', key:'w', value:{ type:'win' } });
   for (const t of so.kongs) actions.push({ label:'Kong', kind:'kong', key:'k', tiles:[t,t,t,t], value:{ type:'kong', t } });
-  const ui = { mode:'discard', actions, coach: coachForTurn(so), moment: so.win };
-  if (so.win){ snd('chance'); V.slow(); }
+  const ui = { mode:'discard', actions, coach: coachForTurn(so), moment: so.win && callLevel() === 'guided' };
+  if (so.win && callLevel() !== 'expert') snd('chance');
   if (S.mode === 'tut') Object.assign(ui, tutTurn(so));
   return waitHuman(ui);
 }
+/* Call prompts. Guided explains what a call does and costs; Standard is a small, even prompt with nothing suggested;
+   Expert shows nothing at all: you tap the discard yourself while it can still be claimed. A prompt only ever offers legal calls. */
+const callLevel = () => S && S.mode === 'tut' ? 'guided' : (settings.calls || 'guided');
+function claimActions(o, d){
+  const a = [];
+  if (o.ron) a.push({ label:'Win', kind:'win', key:'w', value:{ type:'ron' } });
+  if (o.kong) a.push({ label:'Kong', kind:'kong', key:'k', value:{ type:'kong' } });
+  if (o.pung) a.push({ label:'Pung', kind:'pung', key:'p', value:{ type:'pung' } });
+  if (o.chows.length) a.push({ label:'Chow', kind:'chow', key:'c', value:{ type:'chow', start:o.chows[0] }, starts:o.chows.slice() });
+  a.push({ label:'Pass', kind:'pass', key:' ', value:null });
+  return a;
+}
+/* what taking it costs, in plain words, from the hand as it stands. Nothing here changes how a hand scores. */
+function callCost(kind, o, d, full){
+  const me = S.players[0], out = [], open = me.melds.every(m => m.concealed);
+  if (kind === 'ron') return 'Win: this tile completes your hand.';
+  const nm = tName(d.t), plural = d.t >= 27 ? nm + 's' : nm;
+  const take = kind === 'pung' ? `Pung: completes three ${plural}` : kind === 'kong' ? `Kong: completes four ${plural}, and you draw a replacement` : `Chow: completes a run with the ${nm}`;
+  if (open) out.push('your hand is now open, so Concealed hand (1 fan) is gone');
+  const c = countsOf(me.hand), pairs = c.filter(v => v >= 2).length;
+  if (!me.melds.length && pairs >= 5) out.push('Seven Pairs is no longer possible');
+  const ts = me.hand.concat(me.melds.flatMap(m => m.tiles)).map(x => x.t), su = [0,0,0]; ts.forEach(t => { if (t < 27) su[suitOf(t)]++; });
+  const dom = su.indexOf(Math.max(...su)), other = su.reduce((a, v, i) => a + (i === dom ? 0 : v), 0);
+  if (d.t < 27 && suitOf(d.t) !== dom && su[dom] >= 8 && other <= 3) out.push(`it pulls you away from a hand all in ${SUIT_NAME[dom]}`);
+  if ((kind === 'pung' || kind === 'kong') && !me.melds.some(m => m.type !== 'chow') && groupSort(me.hand).sets.filter(g => g.kind === 'chow').length >= 2 && !groupSort(me.hand).sets.some(g => g.kind === 'pung')) out.push('All Chows is no longer possible');
+  if (full){
+    const cur = shanten(c, me.melds.length), need = kind === 'chow' ? null : kind === 'pung' ? [d.t, d.t] : [d.t, d.t, d.t];
+    let after = 99;
+    if (kind === 'chow') for (const st of o.chows) after = Math.min(after, bestAfterClaim(0, [st, st + 1, st + 2].filter(x => x !== d.t), 1));
+    else after = bestAfterClaim(0, need, 1);
+    if (kind !== 'kong'){
+      if (after < 0 || after === 0) out.push(cur === 0 ? 'you stay one tile from winning' : 'you would be one tile from winning');
+      else if (after < cur) out.push(`you go from ${cur} to ${after} ${after === 1 ? 'tile' : 'tiles'} from ready`);
+      else out.push('it does not bring you closer to winning');
+    }
+    out.push(kind === 'kong' ? 'then you throw a tile' : 'you skip ahead to your turn and throw a tile');
+  }
+  if (!out.length) return take + '.';
+  return take + ', but ' + out.join(', and ') + '.';
+}
 function humanClaim(o, d, from){
-  let actions = [];
-  const rec = aiRecommend(o, d.t);
-  if (o.ron) actions.push({ label:'Win', kind:'win', key:'w', value:{ type:'ron' } });
-  if (o.kong) actions.push({ label:'Kong', kind:'kong', key:'k', tiles:[d.t,d.t,d.t,d.t], value:{ type:'kong' }, rec: rec && rec.type === 'kong' });
-  if (o.pung) actions.push({ label:'Pung', kind:'pung', key:'p', tiles:[d.t,d.t,d.t], value:{ type:'pung' }, rec: rec && rec.type === 'pung' });
-  for (const s of o.chows) actions.push({ label:'Chow', kind:'chow', key:'c', tiles:[s,s+1,s+2], value:{ type:'chow', start:s }, rec: rec && rec.type === 'chow' && rec.start === s });
-  actions.push({ label:'Pass', kind:'pass', key:' ', value:null, rec: !rec && !o.ron });
-  const who = S.players[from].name;
+  let actions = claimActions(o, d);
+  const who = S.players[from].name, lvl = callLevel(), rec = aiRecommend(o, d.t);
+  const coachRec = lvl === 'guided' && settings.coach === 2;
+  if (coachRec) actions.forEach(a => { a.rec = rec ? (a.value && a.value.type === rec.type) : (!o.ron && a.kind === 'pass'); });
   let msg, callout = null;
-  if (o.ron) msg = `${who}'s <em>${tName(d.t)}</em> completes your hand.`;
-  else if (settings.coach < 2) msg = `${who} threw <em>${tName(d.t)}</em>.`;
-  else if (rec) msg = `${who} threw <em>${tName(d.t)}</em>. Taking it moves you closer.`;
-  else msg = `${who} threw <em>${tName(d.t)}</em>. Passing is better here.`;
+  if (lvl === 'guided'){
+    actions.forEach(a => { if (a.kind !== 'pass') a.why = callCost(a.value.type, o, d, true); else a.why = 'Pass: let it go. Nothing changes and play moves on.'; });
+    msg = o.ron ? `${who}'s <em>${tName(d.t)}</em> completes your hand.` : `${who} threw <em>${tName(d.t)}</em>.` + (coachRec ? (rec ? ' Taking it moves you closer.' : ' Passing is better here.') : '');
+  } else {
+    actions.forEach(a => { if (a.kind !== 'pass'){ const c = callCost(a.value.type, o, d, false); a.why = /, but /.test(c) ? c.replace(/^[^,]*, but /, '').replace(/^./, m => m.toUpperCase()) : ''; } });
+    msg = `${who} threw <em>${tName(d.t)}</em>.`;
+  }
   if (S.mode === 'tut'){
     actions = actions.filter(a => a.kind === 'pung'); actions.forEach(a => a.rec = true);
     msg = `${who} threw <em>${tName(d.t)}</em>.`;
     callout = { at:'actions', text:`${who} threw a Red Dragon and you hold two. Press Pung to take it: three of a kind, like trips in poker.` };
     if (!actions.length) return Promise.resolve(null);
   }
-  snd('chance'); V.slow(); haptic(6);
-  return waitHuman({ mode:'claim', actions, coach: msg, rec, moment:true, callout });
+  if (lvl !== 'expert') snd('chance');
+  haptic(6);
+  return askClaim({ mode:'claim', level:lvl, actions, coach: msg, rec, moment: lvl === 'guided', callout }, o, d);
+}
+/* a claim prompt; choosing Chow when there is more than one way asks you to touch the tiles you would use */
+async function askClaim(ui, o, d){
+  while (true){
+    const v = await waitHuman(ui);
+    if (!v || v.type !== 'chow' || o.chows.length < 2) return v;
+    const st = await pickChow(o.chows, d);
+    if (st != null) return { type:'chow', start:st };
+  }
+}
+function pickChow(starts, d){
+  const me = S.players[0], need = new Set(); starts.forEach(s => [s, s + 1, s + 2].forEach(t => { if (t !== d.t) need.add(t); }));
+  return waitHuman({ mode:'chowpick', starts: starts.slice(), picked: [], tile: d.t, need,
+    actions: [{ label:'Back', kind:'pass', key:'escape', value:null }],
+    coach: `Touch the tiles you want to use with the <em>${tName(d.t)}</em>.` });
+}
+function chowTap(id){
+  const ui = S.ui; if (!ui || ui.mode !== 'chowpick') return false;
+  const x = S.players[0].hand.find(h => h.id === id); if (!x) return false;
+  if (!ui.need.has(x.t) || ui.picked.includes(x.t)){ V.nudge(id); snd('nope'); return true; }
+  const left = ui.starts.filter(s => [s, s + 1, s + 2].includes(x.t) && x.t !== ui.tile && ui.picked.every(t => [s, s + 1, s + 2].includes(t)));
+  if (!left.length){ V.nudge(id); snd('nope'); return true; }
+  ui.picked.push(x.t); ui.starts = left; snd('pick');
+  if (left.length === 1 || ui.picked.length >= 2){ ui.resolve(left[0]); return true; }
+  ui.need = new Set(); left.forEach(s => [s, s + 1, s + 2].forEach(t => { if (t !== ui.tile && !ui.picked.includes(t)) ui.need.add(t); }));
+  render(); return true;
+}
+/* Expert: every opponent's discard can be claimed for the same short window, whether or not you could use it,
+   so the pause itself gives nothing away. Tap the discard to call; let it pass and the chance is gone. */
+function expertWindow(from, d){
+  return new Promise((res, rej) => {
+    const my = token, o = claimOptions(0, d.t, from), legal = anyOpt(o) && S.mode !== 'tut';
+    let done = false, timer = null;
+    const finish = v => { if (done) return; done = true; clearTimeout(timer); S.claimWin = null; render(); if (my !== token) rej(ABORT); else res(v); };
+    S.claimWin = { id: d.id, until: Date.now() + pace().window, tap: async () => {
+      if (done) return;
+      if (!legal){ say(`Nothing you can call on the ${tName(d.t)}.`, 1600); return; }
+      clearTimeout(timer); S.claimWin = null;
+      const actions = claimActions(o, d); actions.forEach(a => { if (a.kind !== 'pass'){ const c = callCost(a.value.type, o, d, false); a.why = /, but /.test(c) ? c.replace(/^[^,]*, but /, '').replace(/^./, m => m.toUpperCase()) : ''; } });
+      try { const v = await askClaim({ mode:'claim', level:'standard', actions, coach:`${S.players[from].name} threw <em>${tName(d.t)}</em>.` }, o, d); finish(v || null); } catch(e){ if (e === ABORT) rej(ABORT); }
+    } };
+    render();
+    timer = setTimeout(() => finish(null), pace().window);
+  });
 }
 function aiRecommend(o, tile){
   if (o.ron) return { type:'ron' };
@@ -265,7 +364,7 @@ function mistake(id){
 function tryDiscard(id){
   const ui = S && S.ui; if (!ui || ui.mode !== 'discard') return false;
   if (ui.only != null && ui.only !== id){ V.nudge(id); snd('nope'); say('Not that one yet.'); return false; }
-  if (settings.coach === 1 && S.mode !== 'tut' && S.warned !== id){
+  if (settings.coach === 1 && S.mode !== 'tut' && S.mode !== 'lesson' && S.warned !== id){
     const w = mistake(id);
     if (w){ S.warned = id; S.selected = id; V.nudge(id); snd('nope'); say(w + ' Throw it again if you mean it.', 5000); return false; }
   }
@@ -460,7 +559,7 @@ function resultSlip(w, parts, x){
     // a big hand is counted out: one set at a time, then the patterns, then the total
     (async () => {
       const els = [...slip.querySelectorAll('.lines .ln')]; els.forEach(e => e.classList.add('wait'));
-      const wait = ms => new Promise(r => setTimeout(r, ms * (settings.fast ? .5 : 1)));
+      const wait = ms => new Promise(r => setTimeout(r, ms * (settings.pace === 'fast' ? .5 : 1)));
       let fan = 0, hid = 0;
       for (let i = 0; i < els.length - 1 && alive && my === token; i++){
         const g = parts.groups[i];
@@ -475,4 +574,68 @@ function resultSlip(w, parts, x){
       if (alive && my === token){ finish(); if (mine) paintWin(1700); }
     })();
   });
+}
+
+/* ---------------- your rack: the order you keep your tiles in ----------------
+   Auto sort On keeps the rack sorted; Off keeps exactly the order you set for the whole hand, and a tile you have
+   not placed yet waits apart on the right. The order is saved with the match, so it survives calls and a reload. */
+function sortedIds(tiles){ return settings.sortStyle === 'sets' ? groupSort(tiles).ids : sortTiles(tiles.slice()).map(x => x.id); }
+const manualRack = () => !!S && (S.manual || settings.autoSort === 'off');
+function handOrder(){
+  const me = S.players[0], drawn = me.hand.find(x => x.id === me.drawnId);
+  if (!manualRack() || !S.order){
+    const o = sortedIds(me.hand.filter(x => x.id !== me.drawnId)); if (drawn) o.push(drawn.id);
+    return { ids: o, loose: drawn ? 1 : 0 };
+  }
+  const have = new Set(me.hand.map(x => x.id)), placed = S.order.filter(id => have.has(id)), ps = new Set(placed);
+  const loose = me.hand.filter(x => !ps.has(x.id)).sort((a, b) => (a.id === me.drawnId) - (b.id === me.drawnId)).map(x => x.id);
+  return { ids: placed.concat(loose), loose: loose.length };
+}
+function onReorder(id, ins){
+  if (!S) return;
+  const o = handOrder(), n = o.ids.length, placed = o.ids.slice(0, n - o.loose).filter(x => x !== id);
+  placed.splice(Math.min(ins, placed.length), 0, id);
+  if (!S.manual && settings.autoSort !== 'off'){ settings.autoSort = 'off'; save(); say('Auto sort is off for now, so your order stays put. Sort is by the rack.', 4200); }
+  S.order = placed; snd('place'); saveResumeNow(); render();
+  if (typeof lessonEvent === 'function') lessonEvent('reorder');
+}
+function moveInRack(id, dir){
+  const o = handOrder(), i = o.ids.indexOf(id); if (i < 0) return;
+  const placedN = o.ids.length - o.loose, j = Math.max(0, Math.min(placedN - (i < placedN ? 1 : 0), (i < placedN ? i : placedN) + dir));
+  onReorder(id, j);
+}
+function sortOnce(){ if (!S) return; S.order = sortedIds(S.players[0].hand); snd('place'); saveResumeNow(); render(); if (typeof lessonEvent === 'function') lessonEvent('reorder'); }
+function setAutoSort(v){ if (S && v === 'off' && settings.autoSort !== 'off') S.order = handOrder().ids.filter(id => id !== S.players[0].drawnId); settings.autoSort = v; save(); if (S) render(); }
+function saveResumeNow(){ if (!S || S.mode !== 'play' || autotest) return; const r = load(RKEY); if (!r || r.next) return; r.order = S.order; try { localStorage.setItem(RKEY, JSON.stringify(r)); } catch(e){} } // only the order changes: the saved turn stays exactly as it was
+/* the tile type you are holding up: every visible copy of it on the table gets a cool rim */
+function deadType(){
+  if (!S || S.turn === -1) return null;
+  if (S.holdT != null) return S.holdT;
+  const id = S.selected; if (id == null) return null;
+  const x = S.players[0].hand.find(h => h.id === id); return x ? x.t : null;
+}
+function onTable(t){ let n = 0; for (const p of S.players){ n += p.discards.filter(d => d.t === t).length; for (const m of p.melds) n += m.tiles.filter((x, i) => x.t === t && !(m.concealed && m.type === 'kong' && (i === 0 || i === 3))).length; } return n; }
+function noteNew(){ /* a fresh tile waits apart on the right until you place it (manual rack) */ }
+/* grouped by likely sets: finished sets first, then pairs, then two-tile starts, then loose tiles */
+function groupSort(tiles){
+  const c = countsOf(tiles), memo = new Map();
+  const best = cc => {
+    let t = 0; while (t < 34 && !cc[t]) t++;
+    if (t >= 34) return { sc: 0, g: [] };
+    const key = cc.join(''); if (memo.has(key)) return memo.get(key);
+    let b = null;
+    const tryIt = (ts, kind, pts) => { for (const x of ts) cc[x]--; const r = best(cc); for (const x of ts) cc[x]++; const sc = r.sc + pts; if (!b || sc > b.sc) b = { sc, g: [{ kind, ts }].concat(r.g) }; };
+    const suit = t < 27, n = t % 9;
+    if (cc[t] >= 3) tryIt([t, t, t], 'pung', 3);
+    if (suit && n <= 6 && cc[t + 1] && cc[t + 2]) tryIt([t, t + 1, t + 2], 'chow', 3);
+    if (cc[t] >= 2) tryIt([t, t], 'pair', 2.1);
+    if (suit && n <= 7 && cc[t + 1]) tryIt([t, t + 1], 'two', 1);
+    if (suit && n <= 6 && cc[t + 2]) tryIt([t, t + 2], 'two', .9);
+    tryIt([t], 'one', 0);
+    memo.set(key, b); return b;
+  };
+  const r = best(c.slice()), rank = { pung: 0, chow: 0, pair: 1, two: 2, one: 3 };
+  const groups = r.g.slice().sort((a, b) => rank[a.kind] - rank[b.kind] || a.ts[0] - b.ts[0]);
+  const pool = new Map(); for (const x of sortTiles(tiles.slice())){ if (!pool.has(x.t)) pool.set(x.t, []); pool.get(x.t).push(x.id); }
+  return { ids: groups.flatMap(g => g.ts.map(t => pool.get(t).shift())), sets: groups };
 }

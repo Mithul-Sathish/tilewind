@@ -8,7 +8,7 @@ function save(){ try { localStorage.setItem(KEY, JSON.stringify(profile)); } cat
 const defaults = {
   xp:0, games:0, hands:0, wins:0, bestFan:0, winRun:0, stamps:{}, theme:'jade', themePts:0,
   daily:{}, dailyDays:0, dailyLast:null, quests:null, tut:false,
-  settings:{ coach:2, labels:true, music:.45, sfx:.8, fast:false, difficulty:0, length:4, oneTap:false, haptics:true }
+  settings:{ coach:2, helpers:true, music:.45, sfx:.8, pace:'relaxed', calls:'guided', autoSort:'on', sortStyle:'suit', difficulty:0, length:4, oneTap:false, haptics:true }
 };
 const stored = load() || {};
 let profile = Object.assign({}, defaults, stored);
@@ -22,6 +22,12 @@ profile.settings = Object.assign({}, defaults.settings, stored.settings || {});
   if (stored.hands > 0 && stored.tut === undefined) profile.tut = true;
   if (Object.values(profile.daily || {}).some(v => v === true)) profile.daily = {};
   profile.stamps = profile.stamps || {}; profile.daily = profile.daily || {};
+  if (o.labels !== undefined && o.helpers === undefined) s.helpers = !!o.labels;
+  if (o.fast === true && o.pace === undefined) s.pace = 'fast';
+  if (o.calls === undefined && stored.kind) s.calls = stored.kind === 'new' ? 'guided' : 'standard';
+  if (!['relaxed','normal','fast'].includes(s.pace)) s.pace = 'relaxed';
+  if (!['guided','standard','expert'].includes(s.calls)) s.calls = 'guided';
+  delete s.labels; delete s.fast;
   delete s.sound; delete s.speed; delete profile.skin; delete profile.ach; delete profile.streak; delete profile.lastDay;
 })();
 const settings = profile.settings;

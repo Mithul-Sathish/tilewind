@@ -26,7 +26,7 @@ lessons=lessons.replace(" · "," · ")
 src=lambda f: open('src/'+f).read()
 js = "(() => {\n'use strict';\nif (!window.THREE){ document.getElementById('bootMsg').textContent = 'The 3D table could not load.'; return; }\n"
 js += "const FONT_CSS = " + repr(open('build/fonts.css').read()) + ";\n"
-js += names + src('meta.js') + src('faces.js') + src('sound.js') + core + src('view3d.js') + src('flow.js') + src('app.js') + src('more.js') + lessons
+js += names + src('meta.js') + src('faces.js') + src('sound.js') + core + src('view3d.js') + src('flow.js') + src('app.js') + src('more.js') + src('lesson.js') + lessons
 js += """
 /* ---------------- boot ---------------- */
 (async () => {
@@ -34,8 +34,9 @@ js += """
   if (!good){ $('#bootMsg').textContent = 'This device could not start the 3D table.'; return; }
   V.applyTheme(themeOf(profile.theme)); applyCos();
   const seasonLine = seasonTick();
-  if (profile.tut){ renderHome(); showScreen('home'); setTimeout(ensureTiles, 250); }
-  else { ensureTiles(); showScreen('home'); startGame('tut'); }
+  V.setHelpers(settings.helpers);
+  if (profile.tut || profile.asked){ renderHome(); showScreen('home'); setTimeout(ensureTiles, 250); }
+  else { ensureTiles(); $('#screen-home').innerHTML = '<div class="mark"><span class="wm">Tilewind</span><span class="seal">風</span></div>'; showScreen('home'); firstQuestion(); }
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   const bt = $('#boot'); bt.classList.add('gone'); setTimeout(() => bt.remove(), 700);
   window.TW_ready = true;
@@ -43,7 +44,8 @@ js += """
 })();
 window.TW_state = () => S;
 window.TW_themes = THEMES;
-window.TW_api = { setKind, weeklyNow, shareCard, rareReveal, COLLECTION, startGame, playOrResume, goHome, openBook, profile, settings, save, endWin, render, paintWin, callStroke, V };
+window.TW_test = { humanClaim, claimOptions, chowTap, handOrder, groupSort, callCost, unseenFor };
+window.TW_api = { startLesson, firstQuestion, handOrder, onReorder, sortOnce, groupSort, callCost, setAutoSort, onTableView, onHold, PACE, setKind, weeklyNow, shareCard, rareReveal, COLLECTION, startGame, playOrResume, goHome, openBook, profile, settings, save, endWin, render, paintWin, callStroke, V };
 window.TW_autotest = (matches = 3) => new Promise(async res => {
   autotest = true; let errors = 0;
   for (let m = 0; m < matches; m++){
@@ -59,5 +61,5 @@ three=open('vendor/three.min.js').read()
 assert '</script' not in three
 out=shell+'<script>\n'+three+'\n</script>\n<script>\n'+js+'</script>\n'
 open('index.html','w').write(out)
-open('build/test.html','w').write('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>'+out+'</body></html>')
+open(__import__('os').environ.get('TW_OUT','build/test.html'),'w').write('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>'+out+'</body></html>')
 print(len(out))

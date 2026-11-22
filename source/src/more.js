@@ -19,15 +19,15 @@
 
 /* ---------- three kinds of player: asked once, changed any time ---------- */
 const KINDS = [
-  { id:'new',     name:'New to Mahjong',     line:'Larger tiles, a full coach, a gentle table.',          set:{ coach:2, labels:true,  difficulty:0, big:true,  length:4 } },
-  { id:'casual',  name:'I play now and then', line:'Short nudges, a steady table, four-hand matches.',     set:{ coach:1, labels:true,  difficulty:1, big:false, length:4 } },
-  { id:'veteran', name:'I grew up with it',  line:'No coach, no numerals, three old hands, a full game.', set:{ coach:0, labels:false, difficulty:3, big:false, length:16 } }
+  { id:'new',     name:'New to Mahjong',     line:'Tile helpers, explained calls, a full coach, a gentle table.',   set:{ coach:2, helpers:true,  calls:'guided',   difficulty:0, big:true,  length:4 } },
+  { id:'casual',  name:'I play now and then', line:'Tile helpers, quiet calls, short nudges, a steady table.',       set:{ coach:1, helpers:true,  calls:'standard', difficulty:1, big:false, length:4 } },
+  { id:'veteran', name:'I grew up with it',  line:'No helpers, no coach, quiet calls, three old hands, a full game.', set:{ coach:0, helpers:false, calls:'standard', difficulty:3, big:false, length:16 } }
 ];
 function setKind(id){
   const k = KINDS.find(k => k.id === id); if (!k) return;
   profile.kind = id; Object.assign(settings, k.set);
   profile.intro = id === 'new' ? Math.max(1, Math.min(profile.intro || 1, 4)) : 4;
-  save(); V.resize();
+  save(); V.resize(); V.setHelpers(settings.helpers);
 }
 /* hands two, three and four each open with one idea */
 async function introIdea(){
@@ -160,7 +160,7 @@ function rareReveal(c){
     el.innerHTML = `<div class="rin"><span class="rstamp">印</span><h2>${c.name}</h2>${rowHTML(c.ex)}<p>${c.fan} fan. ${c.hint}</p><small>First time. Stamped ${niceDate(dayKey())}.</small></div>`;
     document.body.appendChild(el); snd('kong'); haptic([20, 80, 30]);
     let done = false; const end = () => { if (done) return; done = true; el.classList.add('out'); setTimeout(() => { el.remove(); res(); }, 260); };
-    el.onclick = end; setTimeout(end, settings.fast ? 1500 : 2600);
+    el.onclick = end; setTimeout(end, settings.pace === 'fast' ? 1500 : 2600);
   });
 }
 
