@@ -10,7 +10,7 @@
   --ivory:#EFE6D2; --text:#E9DFC6; --muted:#A9A089; --brass:#C9A24A; --brass-dim:rgba(201,162,74,.45);
   --paper:#EEE5D1; --paper-ink:#2A2117; --paper-line:#B9A57E;
   --serif:'TWserif','Cormorant Garamond',Georgia,serif; --brush:'TWbrush',serif;
-  --ease:cubic-bezier(.2,.8,.2,1); --handH:0px; --stripH:0px;
+  --ease:cubic-bezier(.2,.8,.2,1); --rise:1; --handH:0px; --stripH:0px;
   --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
   --c-red:#A8281E; --c-gold:#B98A2C; --c-jade:#23745A; --c-indigo:#27447F; --c-coral:#E2725B;
   --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -61,7 +61,8 @@ body.moment #veil::before{opacity:1}
 .choice{flex:1;text-align:left;border:1px solid rgba(239,230,210,.22);border-radius:3px;padding:var(--s4) var(--s4) 15px;display:flex;flex-direction:column;gap:5px;min-height:84px;box-shadow:inset 0 1px 0 rgba(255,255,255,.16), 0 10px 22px rgba(0,0,0,.5);transition:filter .14s var(--ease), transform .14s var(--ease)}
 .choice b{font:600 28px/1 var(--serif);letter-spacing:.02em}
 .choice small{font:500 15.5px/1.25 var(--serif);opacity:.88}
-.choice:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.choice{position:relative}.choice::after{content:"";position:absolute;inset:0;border-radius:inherit;background:rgba(255,240,210,.08);opacity:0;transition:opacity .14s var(--ease);pointer-events:none}
+.choice:hover::after{opacity:1}.choice:hover{transform:translateY(-1px)}.choice{transition:transform .14s var(--ease)}
 .choice:active{transform:translateY(1px)}
 .c0{background:var(--c-red);color:#F6ECD8}.c1{background:var(--c-gold);color:#241806}.c2{background:var(--c-jade);color:#F1E9D4}
 @media (max-width:719px){.choices{flex-direction:column;gap:var(--s2)}.choice{min-height:64px;padding:var(--s3) var(--s4)}.choice b{font-size:25px}}
@@ -181,7 +182,7 @@ body.inlesson #ctl .tbtn:not(#bMenu){display:none}
 .brush path{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;animation:paint .26s cubic-bezier(.5,0,.3,1) forwards}
 @keyframes paint{to{stroke-dashoffset:0}}
 @keyframes fadeIn{from{opacity:0}}
-@keyframes slipIn{from{opacity:0;transform:translateY(12px)}}
+@keyframes slipIn{from{opacity:0;transform:translateY(calc(12px * var(--rise)))}}
 
 /* ---------- the slip at the end of a hand ---------- */
 .slipwrap{position:fixed;inset:0;z-index:42;display:flex;align-items:center;justify-content:flex-end;padding:var(--s5);pointer-events:none}
@@ -198,7 +199,6 @@ body.inlesson #ctl .tbtn:not(#bMenu){display:none}
 .ln b{color:var(--verm);font-weight:600;white-space:nowrap}
 .ln.set span{color:#5a4a36}
 .ln.wait{opacity:0;transform:translateY(5px)}
-.ln:hover,.ln.on{background:rgba(179,38,30,.06)}
 .ln.tot{border-bottom:0;padding-top:10px;font:600 25px/1 var(--serif)}
 .ln.tot b{color:var(--paper-ink)} .ln i{font-style:normal}
 .why{font:italic 500 15.5px/1.35 var(--serif);color:#5a4a36;margin:2px 0 var(--s2)}
@@ -335,7 +335,8 @@ table.cmp .row .tile{--w:26px}
 .quiz-fb{margin-top:10px;font-size:17px;color:#4a3d2c;min-height:1.4em}
 .booknav{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:var(--s4)}
 .pg{font:italic 500 17px/1 var(--serif);color:#6b5a43}
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.brush path{stroke-dashoffset:0}}
+/* reduced motion: the same fades, no movement */
+@media (prefers-reduced-motion:reduce){:root{--rise:0}.brush path{stroke-dashoffset:0;animation:none!important}.brush svg{animation:fadeIn .3s both}#boot .bl::after{animation:none}.rstamp{animation:fadeIn .2s both}.quiz-opt.wrong{animation:none}.choice:hover,.choice:active{transform:none}}
 
 /* v5: kinds of player, near miss, rare pattern, records, things for the table */
 .kinds{display:flex;flex-direction:column;gap:6px;width:100%}
@@ -400,6 +401,111 @@ body.peeking #screen-home{visibility:hidden}
 .ptable b{text-align:right;font-weight:600}
 .ptable span{color:#7a6850}
 @media (max-width:560px){.stable{columns:1}.cosrow{grid-template-columns:1fr}.cosrow > span{padding-top:0}.hrow summary{grid-template-columns:96px 1fr auto}.hrow summary span:nth-child(2){display:none}.tabs button{padding-left:6px;padding-right:6px;font-size:14px}}
+
+/* ---------- v7 motion: fades and small rises, opacity and transform only ---------- */
+@keyframes fadeOut{to{opacity:0}}
+@keyframes riseIn{from{opacity:0;transform:translateY(calc(8px * var(--rise)))}}
+@keyframes sinkOut{to{opacity:0;transform:translateY(calc(6px * var(--rise)))}}
+.leaving{animation:fadeOut .18s var(--ease) forwards!important}
+.leaving .slip,.leaving .book,.leaving > .paper{animation:sinkOut .18s var(--ease) forwards!important}
+.fading{animation:fadeOut .16s var(--ease) forwards!important}
+.screen{transition:opacity .26s var(--ease)}
+.screen.scr-in,.screen.scr-out{opacity:0}
+.screen.scr-out{pointer-events:none}.screen.scr-out *{pointer-events:none!important}
+/* the coach line and the waits row: old words fade out under the new ones */
+#coach,#ghosts{display:grid}
+#coach > span,#ghosts > span{grid-area:1/1;display:flex;align-items:center;justify-content:inherit;gap:var(--s2);flex-wrap:wrap}
+#coach > span{display:block;justify-self:center;background:rgba(11,10,8,.74);border-radius:3px;padding:4px 12px 5px;text-shadow:none}
+.sw-in{animation:riseIn .2s var(--ease) both}
+.sw-out{animation:fadeOut .16s var(--ease) forwards;pointer-events:none}
+#actions > .actout{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;gap:6px}
+#actions{isolation:isolate}
+#actions .call{animation:riseIn .2s var(--ease) both;animation-delay:calc(var(--i,0) * 30ms)}
+#actions .whyline{animation:riseIn .22s var(--ease) both}
+#recent .ri.arrive{animation:riseIn .24s var(--ease) both}
+#callout.renew{animation:slipIn .22s var(--ease)}
+#newest.fading,#info.fading,#callout.fading,#recent.fading{pointer-events:none}
+.home-in .mark{animation:fadeIn .5s var(--ease) both}
+.home-in .choice{animation:riseIn .32s var(--ease) both;animation-delay:calc(var(--d,0ms) + var(--i,0) * 40ms)}
+.tbtn{position:relative}
+.tbtn::after{content:"";position:absolute;inset:0;background:rgba(255,240,210,.07);opacity:0;transition:opacity .14s var(--ease);pointer-events:none}
+.tbtn:hover::after{opacity:1}
+/* the score screen, counted out */
+.ln{flex-direction:row}
+.ln .lt{display:flex;flex-direction:column;gap:3px;min-width:0}
+.ln .lt small{font:500 15px/1.3 var(--serif);color:#5a4a36}
+.ln .lts{display:flex;gap:2px}
+.ln .lts .tile,.htiles .tile{--w:22px}
+.ln.hand{flex-direction:column;align-items:flex-start;gap:4px;padding:6px 2px 8px}
+.ln.hand small{font:500 15px/1.3 var(--serif);color:#5a4a36}
+.htiles{display:flex;flex-wrap:wrap;gap:8px 9px}
+.htiles .hg{display:flex;gap:1px;transition:opacity .2s var(--ease), transform .2s var(--ease)}
+.htiles .hg.wait{opacity:0;transform:translateY(calc(4px * var(--rise)))}
+.ln{transition:opacity .22s var(--ease), transform .22s var(--ease)}
+.ln.wait{opacity:0;transform:translateY(calc(5px * var(--rise)))}
+.ln.tot{align-items:center}
+.ln.tot .lt span{font:600 25px/1 var(--serif)}
+.ln.tot b{font:600 25px/1 var(--serif)}
+.nwait{font:500 15px/1.3 var(--serif);color:#5a4a36;margin-right:auto}
+@media (max-width:719px){.ln .lt small,.ln.hand small{font-size:16px}.nearmiss{font-size:16px}.pays{font-size:16px}.pays small{font-size:15px}.fed{font-size:16px}}
+
+/* lesson card: steps cross-fade, nothing in small capitals or long italics */
+#lesson{display:grid}
+#lesson .lbody{grid-area:1/1;display:flex;flex-direction:column;gap:8px;animation:riseIn .22s var(--ease) both}
+#lesson .le{text-transform:none;letter-spacing:.02em;font:600 15px/1.2 var(--serif);color:var(--verm)}
+#lesson .lt{display:grid;font-style:normal;font-weight:600;color:#4a3d2c}
+#lesson .lt > span{grid-area:1/1}
+@media (max-width:719px){#lesson .lbody{gap:6px}#lesson p{font-size:16px}#lesson .lt{font-size:16px}#lesson .le{font-size:14px}}
+
+/* ---------- play with friends ---------- */
+.c3{background:var(--c-indigo);color:#F1E9D4}
+.lobby{width:min(560px,100%);max-height:100%;overflow:auto;padding:22px 24px 18px;display:flex;flex-direction:column;gap:10px;animation:slipIn .24s var(--ease)}
+.lobby h2{font:600 30px/1.1 var(--serif);margin:0}
+.lobby .blead{margin:0}
+.fld{display:flex;flex-direction:column;gap:4px;font:600 16px/1.2 var(--serif);color:#4a3d2c}
+.fld input{font:600 20px/1.2 var(--serif);color:var(--paper-ink);background:rgba(255,255,255,.55);border:1px solid rgba(42,33,23,.4);border-radius:2px;padding:9px 10px;min-height:46px;width:100%;-webkit-user-select:text;user-select:text}
+.fld input:focus{outline:2px solid var(--verm);outline-offset:1px}
+.fld.code{flex:1}.fld.code input{letter-spacing:.18em;text-transform:uppercase}
+.lrow{display:flex;gap:10px;align-items:flex-end}
+.lrow .tbtn.big{min-height:46px}
+.lor{font:500 16px/1.2 var(--serif);color:#6b5a43;margin-top:6px}
+.lmsg{margin:0;min-height:1.4em;font:600 16px/1.35 var(--serif);color:#4a3d2c}
+.lobby .bfoot{display:flex;justify-content:space-between;gap:10px;padding-top:8px;border-top:1px solid rgba(150,124,82,.5)}
+.lhead{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.lhead small{display:block;font:600 15px/1 var(--serif);color:#6b5a43}
+.lcode{font:600 40px/1.05 var(--serif);letter-spacing:.14em;color:var(--paper-ink)}
+.seats{display:flex;flex-direction:column}
+.seatln{display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(150,124,82,.35);font:600 18px/1.2 var(--serif);animation:riseIn .2s var(--ease) both}
+.seatln i{width:12px;height:12px;border-radius:50%}
+.seatln.open{color:#7a6850;font-weight:500}.seatln.open i{border:1px dashed #9a8a70}
+.seatln b{font:600 16px/1 var(--serif);color:#7a6850}.seatln b.ok{color:var(--green)}
+.ro{font:600 17px/1 var(--serif)}
+#reacts{position:absolute;right:max(12px,env(safe-area-inset-right,0px));bottom:calc(var(--handH) + var(--stripH) + 10px);display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;max-width:min(420px,calc(100% - 24px));z-index:25}
+#reacts[hidden]{display:none}
+#reacts.renew{animation:riseIn .2s var(--ease) both}
+#reacts .tbtn{background:rgba(14,12,9,.88);font-size:17px;min-height:44px;letter-spacing:.02em}
+.react{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 12px 8px;background:rgba(14,12,9,.88);border:1px solid rgba(201,162,74,.4);border-radius:3px;font:600 18px/1.1 var(--serif);color:#F1E7CB;animation:riseIn .22s var(--ease) both;pointer-events:none;white-space:nowrap}
+.react b{font:600 14px/1 var(--serif)}
+#ttimer{position:fixed;left:0;top:0;z-index:24;display:flex;flex-direction:column;align-items:center;gap:4px;padding:5px 10px 7px;background:rgba(14,12,9,.82);border:1px solid rgba(201,162,74,.35);border-radius:3px;pointer-events:none;will-change:transform;animation:fadeIn .2s var(--ease)}
+#ttimer[hidden]{display:none}
+#ttimer b{font:600 16px/1 var(--serif);color:#F1E7CB;white-space:nowrap}
+#ttimer i{display:block;width:84px;height:3px;background:rgba(201,162,74,.25);overflow:hidden}
+#ttimer u{display:block;height:100%;background:var(--brass);transform-origin:left;transition:transform .2s linear}
+#ttimer.low u{background:var(--c-coral)}#ttimer.low b{color:#FFD9C9}
+@media (max-width:719px){.lobby{padding:16px 16px 14px}.lcode{font-size:34px}.lrow{flex-wrap:wrap}.lobby .bfoot{flex-wrap:wrap}}
+@media (min-width:720px){.choices{width:min(900px, calc(100% - 32px))}}
+
+/* legibility: no small capitals; labels in sentence case at a readable size */
+.near,#recent .rl,.book h3,.card .ch span,.stamp,.eyebrow,table.cmp th,.rin small{text-transform:none;letter-spacing:.02em}
+.near{font-size:16px}
+#recent .rl{font-size:13px;width:auto;max-width:56px;line-height:1.1}
+.book h3{font-size:18px;color:#6b5a43}
+.card .ch span{font-size:15px}
+.eyebrow{font-size:15px}
+table.cmp th{font-size:15px}
+.rin small{font-size:16px}
+.page .poker{display:none}
+#fpsbox{position:fixed;left:8px;bottom:8px;z-index:90;background:rgba(0,0,0,.8);color:#fff;font:500 14px/1.35 ui-monospace,monospace;padding:6px 8px;pointer-events:none}
 </style>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <filter id="brushy" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="4" result="t"/><feDisplacementMap in="SourceGraphic" in2="t" scale="2.4"/></filter>
@@ -412,16 +518,18 @@ body.peeking #screen-home{visibility:hidden}
   <div id="strip">
     <div id="ghosts" aria-live="polite"></div>
     <div class="coach" id="coach" aria-live="polite"></div>
-    <div id="ctl"><button class="tbtn" id="bSort" title="Sort the rack once (S)" hidden>Sort</button><button class="tbtn" id="bHint" title="Hint (H)">Hint</button><button class="tbtn" id="bPace" title="Speed (F)">Relaxed</button><button class="tbtn" id="bView" title="Table view: look straight down (T)" aria-pressed="false">Table</button><button class="tbtn" id="bMenu" title="Menu (M)">Menu</button></div>
+    <div id="ctl"><button class="tbtn" id="bSort" title="Sort your rack once (S)" hidden>Sort</button><button class="tbtn" id="bHint" title="Show a good tile to throw (H)">Hint</button><button class="tbtn" id="bPace" title="Change the speed (F)">Relaxed</button><button class="tbtn" id="bView" title="Look down at the whole table (T)" aria-pressed="false">Table</button><button class="tbtn" id="bReact" title="Send a quick message" hidden>React</button><button class="tbtn" id="bMenu" title="Settings, rules and more (M)">Menu</button></div>
   </div>
-  <div id="recent" aria-label="Last turns" hidden></div>
+  <div id="recent" aria-label="Last throws" hidden></div>
   <div id="newest" hidden></div>
   <div id="hand" class="sr" role="listbox" aria-label="Your hand"></div>
   <div id="callout" class="paper" hidden></div>
+  <div id="reacts" hidden></div>
+  <div id="ttimer" hidden></div>
 </div>
 <div id="strokes"></div>
 <div id="overlayRoot"></div>
 <div id="toasts"></div>
 <div id="info" class="paper" role="status" hidden></div>
 <div id="lesson" class="paper" hidden></div>
-<div id="boot"><div class="bw"><i>和</i>Tilewind</div><div class="bl"></div><div id="bootMsg">Setting the table</div></div>
+<div id="boot"><div class="bw"><i>和</i>Tilewind</div><div class="bl"></div><div id="bootMsg">Setting up the table</div></div>

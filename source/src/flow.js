@@ -10,7 +10,7 @@ const PACE = {
   normal:  { think: [300, 600],  hold: 260, f: 1,    window: 1250 },
   fast:    { think: [170, 380],  hold: 110, f: .65,  window: 900 }
 };
-const pace = () => PACE[settings.pace] || PACE.relaxed;
+const pace = () => PACE[S && S.mode === 'net' ? S.netPace : settings.pace] || PACE.relaxed;
 function speed(){ return autotest ? 0 : pace().f; }
 function sleep(ms){
   const my = token;
@@ -21,7 +21,8 @@ function shuffle(a){ for (let i = a.length - 1; i > 0; i--){ const j = Math.floo
 function newMatch(opts = {}){
   token++;
   const mode = opts.mode || 'play', teaching = mode === 'play' && profile.intro >= 1 && profile.intro <= 2;
-  const want = mode === 'daily' || mode === 'weekly' ? 1 : mode === 'tut' || teaching ? 0 : settings.difficulty, diff = Math.min(want, 2);
+  const want = mode === 'daily' || mode === 'weekly' || mode === 'net' ? 1 : mode === 'tut' || teaching ? 0 : settings.difficulty, diff = Math.min(want, 2);
+  if (mode !== 'net') V.resetTypes(); // solo tiles keep their fixed ids; a table with friends deals fresh ids every hand
   S = {
     mode, diff,
     players: [0,1,2,3].map(i => ({
@@ -30,7 +31,7 @@ function newMatch(opts = {}){
     })),
     dealer: 0, handNo: 0, totalHands: mode === 'play' ? settings.length : 1, wall: [], turn: 0,
     lastDiscard: null, ui: {}, selected: null, matchXp: 0, started: Date.now(), hintId: null,
-    fed: [], rs: null, wasReady: false, say: null, callout: null, recent: [], newest: null, order: null, claimWin: null
+    fed: [], fedBy: [], rs: null, wasReady: false, say: null, callout: null, recent: [], newest: null, order: null, claimWin: null
   };
 }
 function allTiles(){
@@ -52,12 +53,14 @@ function tutWall(){
 function setupHand(){
   S.rs = S.mode === 'daily' ? hashStr('daily' + dayKey()) | 0 : S.mode === 'weekly' ? weeklySeed() : (Math.random() * 4294967296) | 0;
   S.wall = S.mode === 'tut' ? tutWall() : shuffle(allTiles());
+  if (S.mode === 'net'){ NET.shuffleIds(S.wall); S.dealId = crypto.getRandomValues(new Uint32Array(2)).join('-'); S.fedBy = []; }
   S.slot = new Map(S.wall.map((x, i) => [x.id, i])); S.slotKey = (S.slotKey || 0) + 1; S.reveal = null; S.groups = null; S.revealN = 0;
   for (const p of S.players){ p.hand = []; p.melds = []; p.discards = []; p.flowers = []; p.drawnId = null; }
-  for (let r = 0; r < 13; r++) for (let k = 0; k < 4; k++) S.players[(S.dealer + k) % 4].hand.push(S.wall.shift());
+  S.dealt = new Map(); let di = 0;
+  for (let r = 0; r < 13; r++) for (let k = 0; k < 4; k++){ const x = S.wall.shift(); S.dealt.set(x.id, di++); S.players[(S.dealer + k) % 4].hand.push(x); }
   for (let k = 0; k < 4; k++){
     const p = S.players[(S.dealer + k) % 4];
-    let f; while ((f = p.hand.findIndex(x => x.t >= 34)) >= 0){ p.flowers.push(p.hand.splice(f, 1)[0]); const r = drawTile(p, true); if (r) p.hand.push(r); }
+    let f; while ((f = p.hand.findIndex(x => x.t >= 34)) >= 0){ p.flowers.push(p.hand.splice(f, 1)[0]); const r = drawTile(p, true); if (r){ S.dealt.set(r.id, di++); p.hand.push(r); } }
     sortTiles(p.hand);
   }
   S.roundWind = Math.floor(S.handNo / 4) % 4;
@@ -100,10 +103,15 @@ async function runMatch(loop){
   const my = token;
   try {
     while (true){
-      if (!loop){ setupHand(); showScreen('game'); await V.deal(); } else showScreen('game');
+      if (!loop){
+        setupHand();
+        if (S.mode === 'net'){ await NET.newHand(); S.netDeal = true; NET.pushNow(); }
+        showScreen('game'); fpsStart('deal'); await V.deal(); fpsStop('deal'); S.netDeal = false;
+      } else { if (S.mode === 'net') await NET.newHand(); showScreen('game'); }
       render();
       const r = await playHand(loop); loop = null;
       if (my !== token) return;
+      if (S.mode === 'net' && S.handNo + 1 >= S.totalHands){ NET.matchOver(); netLobbyBack(); return; }
       if (S.handNo + 1 >= S.totalHands){ if (r === 'again') startGame(S.mode === 'tut' ? 'play' : S.mode); else goHome(); return; }
       S.handNo++; S.dealer = (S.dealer + 1) % 4;
     }
@@ -112,25 +120,26 @@ async function runMatch(loop){
 
 async function playHand(st){
   let turn = st ? st.turn : S.dealer, needDraw = st ? st.needDraw : true, kongDraw = st ? st.kongDraw : false;
-  if (!st && !autotest && !profile.viewTip && S.mode === 'play' && !(profile.intro >= 1 && profile.intro <= 3)){ profile.viewTip = true; save(); say('Table, by the menu, looks straight down on every discard. Press and hold any tile to see what it is.', 5600); }
+  if (!st && !autotest && !profile.viewTip && S.mode === 'play' && !(profile.intro >= 1 && profile.intro <= 3)){ profile.viewTip = true; save(); say('Tip: Table shows every discard from above. Press and hold a tile to see what it is.', 5200); }
   if (!st && !autotest) await introIdea(); // hands two to four open with one new idea, before anyone moves
   while (true){
     const p = S.players[turn];
     S.turn = turn;
-    S.resumeAt = { turn, needDraw, kongDraw }; saveResume(S.resumeAt);
+    S.resumeAt = { turn, needDraw, kongDraw }; saveResume(S.resumeAt); if (S.mode === 'net') NET.saveBackup(S.resumeAt);
     const pc = pace(), think = (pc.think[0] + Math.random() * (pc.think[1] - pc.think[0])) / pc.f; // sleep() scales it back by the pace
     if (needDraw){
       const tile = drawTile(p, kongDraw);
       if (!tile) return endDraw();
       p.hand.push(tile); p.drawnId = tile.id; // the enlarged copy of the last discard stays until the next one replaces it
       if (p.isHuman) noteNew(tile.id);
-      if (p.isHuman) snd('draw');
+      if (p.isHuman) snd('draw'); else if (S.mode === 'net') NET.fx('snd', { sk: 'draw' }, turn);
       render();
-      if (!p.isHuman) await sleep(think * .45);
+      if (!p.isHuman && !NET.live(turn)) await sleep(think * .45);
     } else render();
     const so = selfOptions(turn, needDraw);
     let action;
-    if (p.isHuman){ if (S.mode === 'tut') await tutIntro(); action = await humanTurn(so); }
+    if (p.isHuman){ if (S.mode === 'tut') await tutIntro(); action = await (S.mode === 'net' ? netLocalTurn(so) : humanTurn(so)); }
+    else if (NET.live(turn)) action = await NET.askTurn(turn, so);
     else {
       if (S.mode === 'tut') action = { type:'discard', id: p.drawnId != null ? p.drawnId : p.hand[0].id };
       else if (so.win) action = { type:'win' };
@@ -140,7 +149,7 @@ async function playHand(st){
     }
     if (action.type === 'win') return endWin(turn, true, { kongDraw, lastTile: S.wall.length === 0, winId: p.drawnId });
     if (action.type === 'kong'){
-      doSelfKong(turn, action.t); snd('kong'); haptic([14, 40, 14, 40, 20]); callStroke(turn, 'kong'); V.thump(1, true); render();
+      doSelfKong(turn, action.t); haptic([14, 40, 14, 40, 20]); callStroke(turn, 'kong'); render();
       if (turn === 0){ questEvent({ kind:'kong' }); save(); }
       await sleep(620); needDraw = true; kongDraw = true; continue;
     }
@@ -152,13 +161,14 @@ async function playHand(st){
     if (p.isHuman){ haptic(10); readyCheck(); }
     render();
     if (autotest) for (const q of S.players){ if (q.hand.length + 3 * q.melds.length !== 13) (window.TW_bad = window.TW_bad || []).push([q.name, q.hand.length, q.melds.length]); }
-    if (S.mode === 'tut' && p.isHuman && S.wasReady) await tutSay('You are one tile from winning. The tiles you wait for sit here beside your rack, with how many of each are still unseen.', 'ghosts');
+    if (S.mode === 'tut' && p.isHuman && S.wasReady) await tutSay('You are one tile from winning. The tiles that would win are shown here, with how many of each are left.', 'ghosts');
     // nothing moves while the tile is in the air; then it is held still long enough to read
     await V.whenLanded(d.id);
     let mine = undefined;
-    if (!p.isHuman && callLevel() === 'expert' && !autotest && S.players[0].isHuman && S.mode !== 'tut' && S.mode !== 'lesson') mine = await expertWindow(turn, d);
+    if (S.mode === 'net') await sleep((p.isHuman || NET.live(turn) ? 200 : pace().hold) / pace().f);
+    else if (!p.isHuman && callLevel() === 'expert' && !autotest && S.players[0].isHuman && S.mode !== 'tut' && S.mode !== 'lesson') mine = await expertWindow(turn, d);
     else await sleep(p.isHuman ? 240 : pace().hold / pace().f);
-    const claim = await resolveClaims(turn, d, mine);
+    const claim = S.mode === 'net' ? await netClaims(turn, d) : await resolveClaims(turn, d, mine);
     if (!claim){ turn = (turn + 1) % 4; needDraw = true; continue; }
     p.discards.pop(); S.lastDiscard = null; S.newest = null; S.recent = S.recent.filter(r => r.id !== d.id);
     if (claim.type === 'ron'){
@@ -167,7 +177,8 @@ async function playHand(st){
     }
     makeMeld(claim.pi, claim, d);
     if (turn === 0) S.fed.push({ by:claim.pi, t:d.t, type:claim.type });
-    snd(claim.type); haptic(claim.type === 'chow' ? [12, 50, 12] : [16, 50, 22]); callStroke(claim.pi, claim.type); V.thump(claim.type === 'chow' ? .45 : claim.type === 'kong' ? 1 : .8, claim.type === 'kong');
+    S.fedBy.push({ from:turn, by:claim.pi, t:d.t });
+    haptic(claim.type === 'chow' ? [12, 50, 12] : [16, 50, 22]); callStroke(claim.pi, claim.type);
     if (claim.pi === 0){ questEvent({ kind:'claim', type:claim.type }); if (claim.type === 'kong') questEvent({ kind:'kong' }); save(); }
     turn = claim.pi; needDraw = claim.type === 'kong'; kongDraw = needDraw;
     render(); await sleep(claim.pi === 0 ? 420 : 640);
@@ -194,6 +205,42 @@ async function resolveClaims(from, d, mine){
   return decisions[0];
 }
 
+/* ---------------- a table with friends: every person decides at once, on a clock ---------------- */
+async function netLocalTurn(so){
+  const stop = NET.localClock('turn', NET.turnMs(), () => { say('Time is up, so your newest tile was thrown for you.', 3200); if (S.ui && S.ui.resolve) S.ui.resolve(NET.defaultDiscard(0)); });
+  try { return await humanTurn(so); } finally { stop(); }
+}
+async function netLocalClaim(fn, ms){
+  S.netOut = false;
+  const stop = NET.localClock('claim', ms, () => { S.netOut = true; if (S.ui && S.ui.resolve) S.ui.resolve(null); });
+  try { return await fn(); } finally { stop(); S.netOut = false; }
+}
+async function netClaims(from, d){
+  const lvl = callLevel(), jobs = [], tag = (pi, k) => v => v ? Object.assign({ pi, k }, v) : null;
+  for (let k = 1; k < 4; k++){
+    const pi = (from + k) % 4, o = claimOptions(pi, d.t, from), has = anyOpt(o);
+    if (pi === 0){
+      if (lvl === 'expert') jobs.push(netLocalClaim(() => expertWindow(from, d), pace().window + NET.callMs()).then(tag(pi, k)));
+      else if (has) jobs.push(netLocalClaim(() => humanClaim(o, d, from), NET.callMs()).then(tag(pi, k)));
+    } else if (NET.live(pi)){
+      if (lvl === 'expert') jobs.push(NET.askExpert(pi, d, from).then(tag(pi, k)));
+      else if (has) jobs.push(NET.askClaim(pi, o, d, from).then(tag(pi, k)));
+    } else if (has) jobs.push(Promise.resolve(tag(pi, k)(aiClaim(pi, d.t, o))));
+  }
+  const decisions = (await Promise.all(jobs)).filter(Boolean);
+  if (!decisions.length) return null;
+  const rank = x => x.type === 'ron' ? 0 : (x.type === 'pung' || x.type === 'kong') ? 1 : 2;
+  decisions.sort((a, b) => rank(a) - rank(b) || a.k - b.k);
+  const win = decisions[0];
+  if (decisions.length > 1) (window.TW_fights = window.TW_fights || []).push(decisions.map(x => NET.seatName(x.pi) + ' ' + x.type).join(', ') + ' -> ' + NET.seatName(win.pi));
+  for (const x of decisions.slice(1)){
+    const why = rank(win) < rank(x) ? (win.type === 'ron' ? 'winning comes before any call' : `a ${win.type === 'kong' ? 'Kong' : 'Pung'} comes before a Chow`) : 'they are next in turn';
+    const text = `${NET.seatName(win.pi)} took it: ${why}.`;
+    if (x.pi === 0) say(text, 3600); else NET.fx('note', { text }, x.pi);
+  }
+  return win;
+}
+
 /* ---------------- your decisions ---------------- */
 function waitHuman(ui){
   return new Promise((res, rej) => {
@@ -206,8 +253,8 @@ function waitHuman(ui){
 }
 function humanTurn(so){
   const actions = [];
-  if (so.win) actions.push({ label:'Win', kind:'win', key:'w', value:{ type:'win' } });
-  for (const t of so.kongs) actions.push({ label:'Kong', kind:'kong', key:'k', tiles:[t,t,t,t], value:{ type:'kong', t } });
+  if (so.win) actions.push({ label:'Win the hand', kind:'win', key:'w', value:{ type:'win' } });
+  for (const t of so.kongs) actions.push({ label:'Make a Kong', kind:'kong', key:'k', tiles:[t,t,t,t], value:{ type:'kong', t } });
   const ui = { mode:'discard', actions, coach: coachForTurn(so), moment: so.win && callLevel() === 'guided' };
   if (so.win && callLevel() !== 'expert') snd('chance');
   if (S.mode === 'tut') Object.assign(ui, tutTurn(so));
@@ -215,43 +262,43 @@ function humanTurn(so){
 }
 /* Call prompts. Guided explains what a call does and costs; Standard is a small, even prompt with nothing suggested;
    Expert shows nothing at all: you tap the discard yourself while it can still be claimed. A prompt only ever offers legal calls. */
-const callLevel = () => S && S.mode === 'tut' ? 'guided' : (settings.calls || 'guided');
+const callLevel = () => S && S.mode === 'tut' ? 'guided' : S && S.mode === 'net' ? S.netCalls : (settings.calls || 'guided');
 function claimActions(o, d){
   const a = [];
-  if (o.ron) a.push({ label:'Win', kind:'win', key:'w', value:{ type:'ron' } });
-  if (o.kong) a.push({ label:'Kong', kind:'kong', key:'k', value:{ type:'kong' } });
-  if (o.pung) a.push({ label:'Pung', kind:'pung', key:'p', value:{ type:'pung' } });
-  if (o.chows.length) a.push({ label:'Chow', kind:'chow', key:'c', value:{ type:'chow', start:o.chows[0] }, starts:o.chows.slice() });
+  if (o.ron) a.push({ label:'Win with it', kind:'win', key:'w', value:{ type:'ron' } });
+  if (o.kong) a.push({ label:'Take for Kong', kind:'kong', key:'k', value:{ type:'kong' } });
+  if (o.pung) a.push({ label:'Take for Pung', kind:'pung', key:'p', value:{ type:'pung' } });
+  if (o.chows.length) a.push({ label:'Take for Chow', kind:'chow', key:'c', value:{ type:'chow', start:o.chows[0] }, starts:o.chows.slice() });
   a.push({ label:'Pass', kind:'pass', key:' ', value:null });
   return a;
 }
-/* what taking it costs, in plain words, from the hand as it stands. Nothing here changes how a hand scores. */
-function callCost(kind, o, d, full){
-  const me = S.players[0], out = [], open = me.melds.every(m => m.concealed);
-  if (kind === 'ron') return 'Win: this tile completes your hand.';
+/* what taking it does and costs, in plain words, from the hand as it stands. Nothing here changes how a hand scores. */
+function callParts(kind, o, d, full){
+  const me = S.players[0], costs = [], open = me.melds.every(m => m.concealed);
+  if (kind === 'ron') return { take: 'This tile finishes your hand.', costs: [], effect: '' };
   const nm = tName(d.t), plural = d.t >= 27 ? nm + 's' : nm;
-  const take = kind === 'pung' ? `Pung: completes three ${plural}` : kind === 'kong' ? `Kong: completes four ${plural}, and you draw a replacement` : `Chow: completes a run with the ${nm}`;
-  if (open) out.push('your hand is now open, so Concealed hand (1 fan) is gone');
+  const take = kind === 'pung' ? `Makes three ${plural}.` : kind === 'kong' ? `Makes four ${plural}, and you draw an extra tile.` : `Makes a run with the ${nm}.`;
+  if (open) costs.push('you lose the Hidden hand bonus (1 faan)');
   const c = countsOf(me.hand), pairs = c.filter(v => v >= 2).length;
-  if (!me.melds.length && pairs >= 5) out.push('Seven Pairs is no longer possible');
+  if (!me.melds.length && pairs >= 5) costs.push('you can no longer make Seven Pairs');
   const ts = me.hand.concat(me.melds.flatMap(m => m.tiles)).map(x => x.t), su = [0,0,0]; ts.forEach(t => { if (t < 27) su[suitOf(t)]++; });
   const dom = su.indexOf(Math.max(...su)), other = su.reduce((a, v, i) => a + (i === dom ? 0 : v), 0);
-  if (d.t < 27 && suitOf(d.t) !== dom && su[dom] >= 8 && other <= 3) out.push(`it pulls you away from a hand all in ${SUIT_NAME[dom]}`);
-  if ((kind === 'pung' || kind === 'kong') && !me.melds.some(m => m.type !== 'chow') && groupSort(me.hand).sets.filter(g => g.kind === 'chow').length >= 2 && !groupSort(me.hand).sets.some(g => g.kind === 'pung')) out.push('All Chows is no longer possible');
-  if (full){
-    const cur = shanten(c, me.melds.length), need = kind === 'chow' ? null : kind === 'pung' ? [d.t, d.t] : [d.t, d.t, d.t];
+  if (d.t < 27 && suitOf(d.t) !== dom && su[dom] >= 8 && other <= 3) costs.push(`it breaks up your ${SUIT_NAME[dom]} hand`);
+  if ((kind === 'pung' || kind === 'kong') && !me.melds.some(m => m.type !== 'chow') && groupSort(me.hand).sets.filter(g => g.kind === 'chow').length >= 2 && !groupSort(me.hand).sets.some(g => g.kind === 'pung')) costs.push('you can no longer make All Chows');
+  let effect = '';
+  if (full && kind !== 'kong'){
+    const cur = shanten(c, me.melds.length), need = kind === 'chow' ? null : [d.t, d.t];
     let after = 99;
     if (kind === 'chow') for (const st of o.chows) after = Math.min(after, bestAfterClaim(0, [st, st + 1, st + 2].filter(x => x !== d.t), 1));
     else after = bestAfterClaim(0, need, 1);
-    if (kind !== 'kong'){
-      if (after < 0 || after === 0) out.push(cur === 0 ? 'you stay one tile from winning' : 'you would be one tile from winning');
-      else if (after < cur) out.push(`you go from ${cur} to ${after} ${after === 1 ? 'tile' : 'tiles'} from ready`);
-      else out.push('it does not bring you closer to winning');
-    }
-    out.push(kind === 'kong' ? 'then you throw a tile' : 'you skip ahead to your turn and throw a tile');
+    effect = after <= 0 ? (cur === 0 ? 'You stay one tile from winning.' : 'You will be one tile from winning.') : after < cur ? `You go from ${cur + 1} to ${after + 1} tiles from winning.` : 'It does not get you closer to winning.';
   }
-  if (!out.length) return take + '.';
-  return take + ', but ' + out.join(', and ') + '.';
+  return { take, costs, effect };
+}
+const costLine = c => c.costs.length ? 'But ' + c.costs.join(', and ') + '.' : '';
+function callCost(kind, o, d, full){
+  const c = callParts(kind, o, d, full), name = { ron: 'Win', pung: 'Pung', kong: 'Kong', chow: 'Chow' }[kind];
+  return [name + ': ' + c.take, c.effect, costLine(c)].filter(Boolean).join(' ');
 }
 function humanClaim(o, d, from){
   let actions = claimActions(o, d);
@@ -260,16 +307,16 @@ function humanClaim(o, d, from){
   if (coachRec) actions.forEach(a => { a.rec = rec ? (a.value && a.value.type === rec.type) : (!o.ron && a.kind === 'pass'); });
   let msg, callout = null;
   if (lvl === 'guided'){
-    actions.forEach(a => { if (a.kind !== 'pass') a.why = callCost(a.value.type, o, d, true); else a.why = 'Pass: let it go. Nothing changes and play moves on.'; });
-    msg = o.ron ? `${who}'s <em>${tName(d.t)}</em> completes your hand.` : `${who} threw <em>${tName(d.t)}</em>.` + (coachRec ? (rec ? ' Taking it moves you closer.' : ' Passing is better here.') : '');
+    actions.forEach(a => { if (a.kind !== 'pass') a.why = callCost(a.value.type, o, d, true); else a.why = 'Pass: let it go and play moves on.'; });
+    msg = o.ron ? `${who}'s <em>${tName(d.t)}</em> finishes your hand.` : `${who} threw <em>${tName(d.t)}</em>.` + (coachRec ? (rec ? ' Taking it gets you closer.' : ' Better to pass.') : '');
   } else {
-    actions.forEach(a => { if (a.kind !== 'pass'){ const c = callCost(a.value.type, o, d, false); a.why = /, but /.test(c) ? c.replace(/^[^,]*, but /, '').replace(/^./, m => m.toUpperCase()) : ''; } });
+    actions.forEach(a => { if (a.kind !== 'pass') a.why = costLine(callParts(a.value.type, o, d, false)); });
     msg = `${who} threw <em>${tName(d.t)}</em>.`;
   }
   if (S.mode === 'tut'){
     actions = actions.filter(a => a.kind === 'pung'); actions.forEach(a => a.rec = true);
     msg = `${who} threw <em>${tName(d.t)}</em>.`;
-    callout = { at:'actions', text:`${who} threw a Red Dragon and you hold two. Press Pung to take it: three of a kind, like trips in poker.` };
+    callout = { at:'actions', text:`${who} threw a Red Dragon, and you have two. Tap Take for Pung to make three of a kind.` };
     if (!actions.length) return Promise.resolve(null);
   }
   if (lvl !== 'expert') snd('chance');
@@ -281,15 +328,17 @@ async function askClaim(ui, o, d){
   while (true){
     const v = await waitHuman(ui);
     if (!v || v.type !== 'chow' || o.chows.length < 2) return v;
+    if (S.netOut) return null;
     const st = await pickChow(o.chows, d);
     if (st != null) return { type:'chow', start:st };
+    if (S.netOut) return null;
   }
 }
 function pickChow(starts, d){
   const me = S.players[0], need = new Set(); starts.forEach(s => [s, s + 1, s + 2].forEach(t => { if (t !== d.t) need.add(t); }));
   return waitHuman({ mode:'chowpick', starts: starts.slice(), picked: [], tile: d.t, need,
-    actions: [{ label:'Back', kind:'pass', key:'escape', value:null }],
-    coach: `Touch the tiles you want to use with the <em>${tName(d.t)}</em>.` });
+    actions: [{ label:'Go back', kind:'pass', key:'escape', value:null }],
+    coach: `Tap the two tiles to use with the <em>${tName(d.t)}</em>.` });
 }
 function chowTap(id){
   const ui = S.ui; if (!ui || ui.mode !== 'chowpick') return false;
@@ -311,9 +360,9 @@ function expertWindow(from, d){
     const finish = v => { if (done) return; done = true; clearTimeout(timer); S.claimWin = null; render(); if (my !== token) rej(ABORT); else res(v); };
     S.claimWin = { id: d.id, until: Date.now() + pace().window, tap: async () => {
       if (done) return;
-      if (!legal){ say(`Nothing you can call on the ${tName(d.t)}.`, 1600); return; }
+      if (!legal){ say(`You cannot take the ${tName(d.t)}.`, 1600); return; }
       clearTimeout(timer); S.claimWin = null;
-      const actions = claimActions(o, d); actions.forEach(a => { if (a.kind !== 'pass'){ const c = callCost(a.value.type, o, d, false); a.why = /, but /.test(c) ? c.replace(/^[^,]*, but /, '').replace(/^./, m => m.toUpperCase()) : ''; } });
+      const actions = claimActions(o, d); actions.forEach(a => { if (a.kind !== 'pass') a.why = costLine(callParts(a.value.type, o, d, false)); });
       try { const v = await askClaim({ mode:'claim', level:'standard', actions, coach:`${S.players[from].name} threw <em>${tName(d.t)}</em>.` }, o, d); finish(v || null); } catch(e){ if (e === ABORT) rej(ABORT); }
     } };
     render();
@@ -329,12 +378,12 @@ function aiRecommend(o, tile){
   return null;
 }
 function coachForTurn(so){
-  if (so.win) return 'Your hand is complete. Press <em>Win</em>.';
+  if (so.win) return 'You can win. Tap <em>Win the hand</em>.';
   const cands = analyzeDiscards(0, { defend: S.diff >= 1 });
   S.ui_tip = cands[0] ? cands[0].t : null;
-  if (settings.coach < 2 || !cands[0]) return 'Your turn. Throw a tile.';
-  if (cands[0].sh === 0) return `Throw <em>${tName(cands[0].t)}</em> and you are one tile from winning.`;
-  return `Your turn. Suggested: <em>${tName(cands[0].t)}</em>.`;
+  if (settings.coach < 2 || !cands[0]) return 'Tap a tile to throw it away.';
+  if (cands[0].sh === 0) return `Throw ${tileHTML(cands[0].t)} to be one tile from winning.`;
+  return `Try ${tileHTML(cands[0].t)}`;
 }
 function stepsToWin(){
   const me = S.players[0], c = countsOf(me.hand), mc = me.melds.length;
@@ -357,8 +406,8 @@ function mistake(id){
   const me = S.players[0], x = me.hand.find(h => h.id === id); if (!x) return null;
   const c = analyzeDiscards(0, { defend: S.diff >= 1 }), best = c[0], mine = c.find(k => k.t === x.t);
   if (!best || !mine) return null;
-  if (best.sh === 0 && mine.sh > 0) return `Throwing ${tName(x.t)} breaks a ready hand.`;
-  if (mine.sh > best.sh) return `${tName(x.t)} is part of a set you are building.`;
+  if (best.sh === 0 && mine.sh > 0) return `Keep the ${tName(x.t)}: you need it to be one tile from winning.`;
+  if (mine.sh > best.sh) return `The ${tName(x.t)} helps a set you are building.`;
   return null;
 }
 function tryDiscard(id){
@@ -366,7 +415,7 @@ function tryDiscard(id){
   if (ui.only != null && ui.only !== id){ V.nudge(id); snd('nope'); say('Not that one yet.'); return false; }
   if (settings.coach === 1 && S.mode !== 'tut' && S.mode !== 'lesson' && S.warned !== id){
     const w = mistake(id);
-    if (w){ S.warned = id; S.selected = id; V.nudge(id); snd('nope'); say(w + ' Throw it again if you mean it.', 5000); return false; }
+    if (w){ S.warned = id; S.selected = id; V.nudge(id); snd('nope'); say(w + ' Tap it again to throw it anyway.', 4600); return false; }
   }
   ui.resolve({ type:'discard', id }); return true;
 }
@@ -379,7 +428,7 @@ function hint(){
   if (!S || !S.ui) return;
   if (S.ui.mode === 'discard'){
     const c = analyzeDiscards(0, { defend: S.diff >= 1 })[0]; if (!c) return;
-    S.hintId = pickDiscardTile(0, c.t); say(`Suggested: <em>${tName(c.t)}</em>.`, 2600);
+    S.hintId = pickDiscardTile(0, c.t); say(`Try ${tileHTML(c.t)}`, 2600);
     setTimeout(() => { if (S && S.hintId){ S.hintId = null; render(); } }, 2600);
   } else if (S.ui.mode === 'claim'){ S.showRec = true; render(); }
 }
@@ -394,15 +443,15 @@ function tutSay(text, at){
 }
 async function tutIntro(){
   if (S.tutStep) return; S.tutStep = 1;
-  await tutSay('This is your hand: 13 tiles, plus the one you just drew. To win you need four sets of three and one pair.', 'rack');
-  await tutSay('You already hold two runs, 1-2-3 and 4-5-6. A run of three is a Chow, like a straight in poker.', 'rack');
+  await tutSay('This is your hand: 13 tiles, plus the one you just drew. To win, you need four sets and a pair.', 'rack');
+  await tutSay('You already have two Chows (runs): 1-2-3 and 4-5-6.', 'rack');
 }
 function tutTurn(so){
   const me = S.players[0];
-  if (so.win) return { callout:{ at:'actions', text:'6 Bamboo finishes 6-7-8. That is four sets and a pair. Press Win.' } };
-  if (!me.melds.length){ const w = me.hand.find(x => x.t === 29); return { only: w.id, coach:'Your turn.', callout:{ at:'tile', id:w.id, text:'West Wind matches nothing you hold. Drag it up onto the table, or tap it twice.' } }; }
+  if (so.win) return { callout:{ at:'actions', text:'The 6 of Bamboo finishes 6-7-8. That makes four sets and a pair. Tap Win the hand.' } };
+  if (!me.melds.length){ const w = me.hand.find(x => x.t === 29); return { only: w.id, coach:'Your turn.', callout:{ at:'tile', id:w.id, text:'The West Wind matches nothing you have. Drag it up onto the table, or tap it twice, to throw it away.' } }; }
   const n = me.hand.find(x => x.t === 30);
-  return { only: n.id, coach:'Your turn.', callout:{ at:'tile', id:n.id, text:'Your Pung stays face up on the table. Now throw North Wind, your last loose tile.' } };
+  return { only: n.id, coach:'Your turn.', callout:{ at:'tile', id:n.id, text:'Your Pung stays face up on the table. Now throw away the North Wind. It matches nothing.' } };
 }
 
 /* ---------------- the end of a hand ---------------- */
@@ -446,13 +495,14 @@ async function endWin(pi, selfDrawn, ctx){
   const names = res.items.map(i => i.name), news = [];
   let gain = 10;
   if (autotest) (window.TW_log = window.TW_log || []).push({ w:pi, fan:res.fan, items:names, self:selfDrawn });
+  else if (S.mode === 'net'){ /* a table with friends keeps no records */ }
   else if (pi === 0){
     profile.wins++; profile.winRun++; profile.bestFan = Math.max(profile.bestFan, res.fan);
     gain += 30 + res.fan * 10;
     const had = Object.assign({}, profile.stamps);
     news.push(...stampWin(names), ...questEvent({ kind:'win', self:selfDrawn, concealed:res.concealed, fan:res.fan, names }));
     S.rare = COLLECTION.filter(c => c.fan >= 3 && profile.stamps[c.id] && !had[c.id]);
-  } else profile.winRun = 0;
+  } else if (S.mode !== 'net') profile.winRun = 0;
   return finishHand({ pi, selfDrawn, ctx, res, val, pay, news, gain });
 }
 function endDraw(){
@@ -464,7 +514,7 @@ async function finishHand(w){
   const last = S.handNo + 1 >= S.totalHands, news = w.news, me = S.players[0];
   let place = 0, order = null, dailyLine = '';
   setTension(0);
-  if (!autotest){
+  if (!autotest && S.mode !== 'net'){
     profile.hands++; todaysQuests(); profile.quests.hands++;
     news.push(...questEvent({ kind:'hand', count: profile.quests.hands, paid: Math.max(0, -w.pay[0]) }));
     if (S.mode === 'tut'){ profile.tut = true; if (!profile.intro) profile.intro = 1; }
@@ -497,81 +547,130 @@ async function finishHand(w){
   // what the table shows
   const win = w.pi >= 0, mine = w.pi === 0, big = win && w.res.fan >= 3;
   let parts = { groups:[], rest:[] };
-  if (win){ parts = revealGroups(w.pi, w.res); S.reveal = w.pi; S.groups = parts.groups; S.revealN = big ? 0 : parts.groups.length; }
-  if (S.mode !== 'tut'){ recordHand(w, parts); save(); }
+  if (win){ parts = revealGroups(w.pi, w.res); S.reveal = w.pi; S.groups = parts.groups; S.revealN = 0; S.revealFast = false; }
+  if (S.mode !== 'tut' && S.mode !== 'net'){ recordHand(w, parts); save(); }
+  if (S.mode === 'net' && last){ order = S.players.map((p, i) => ({ p, i })).sort((a, b) => b.p.score - a.p.score); place = order.findIndex(o => o.i === 0) + 1; }
   render();
-  if (win){ V.pushTo(w.pi, big ? 1 : .55); snd(mine ? (big ? 'bigwin' : 'win') : 'lose'); haptic(mine ? [20, 60, 20, 60, 40] : 12); callStroke(w.pi, 'win', big ? 1500 : 1000); }
+  if (win){ fpsStart('win'); setTimeout(() => fpsStop('win'), 5200); V.pushTo(w.pi, big ? 1 : .55); snd(mine ? (big ? 'bigwin' : 'win') : 'lose'); haptic(mine ? [20, 60, 20, 60, 40] : 12); callStroke(w.pi, 'win', big ? 1500 : 1000); }
   await sleep(win ? 520 : 400);
   if (mine && S.rare && S.rare.length){ const rr = S.rare; S.rare = null; for (const c of rr) await rareReveal(c); }
-  return resultSlip(w, parts, { last, big, place, order, dailyLine });
+  const x = { last, big, place, order, dailyLine };
+  if (S.mode === 'net'){
+    NET.result(w, parts, x);
+    resultSlip(w, parts, Object.assign(x, { net: true })).catch(() => {});
+    await NET.waitNext();
+    closeOverlay();
+    return 'next';
+  }
+  return resultSlip(w, parts, x);
 }
 
+/* the names the scorer uses stay as they are; this is only what the player reads */
+const ITEM_TEXT = [
+  [/^Mahjong$/, () => 'Winning hand', '1 faan for finishing a hand.'],
+  [/^Self-drawn$/, () => 'Own draw', 'The winner drew the winning tile from the wall, so all three others pay.'],
+  [/^Concealed hand$/, () => 'Hidden hand', 'No tiles were taken from anyone else.'],
+  [/^Seven Pairs$/, () => 'Seven Pairs', 'Seven different pairs instead of four sets and a pair.'],
+  [/^All Chows$/, () => 'All Chows', 'Every set is a run.'],
+  [/^All Pungs$/, () => 'All Pungs', 'Every set is three of a kind.'],
+  [/Dragon pung$/, n => 'Pung of ' + n.split(' ')[0] + ' Dragons', 'Three of a kind in Dragons always scores.'],
+  [/^Seat wind pung/, n => 'Pung of ' + n.match(/\((\w+)\)/)[1] + ' Wind, the seat wind', 'The wind on the winner\'s name plate.'],
+  [/^Round wind pung/, n => 'Pung of ' + n.match(/\((\w+)\)/)[1] + ' Wind, the round wind', 'The wind in the middle of the table.'],
+  [/Kongs?$/, n => n, 'Four of a kind. 1 faan for each.'],
+  [/^Own (flower|season): /, n => n, 'A bonus tile with the winner\'s seat number.'],
+  [/^All Honors$/, () => 'Only Winds and Dragons', 'No suit tiles at all.'],
+  [/^Full Flush$/, () => 'Full Flush', 'Every tile is from one suit.'],
+  [/^Half Flush$/, () => 'Half Flush', 'One suit, plus Winds or Dragons.'],
+  [/^Last tile of the wall$/, () => 'Last tile', 'Won on the very last tile of the wall.'],
+  [/^Win on a Kong replacement$/, () => 'Kong replacement', 'Won on the extra tile drawn after a Kong.']
+];
+const itemText = name => { const e = ITEM_TEXT.find(e => e[0].test(name)); return e ? { label: e[1](name), why: e[2] } : { label: name, why: '' }; };
+const setWhyText = label => /Dragons/.test(label) ? 'Three of a kind in Dragons always scores.' : /Wind/.test(label) ? 'A wind that matches the seat or the round.' : /^Kong/.test(label) ? 'Four of a kind. 1 faan for each.' : '';
+function typeById(id){
+  for (const p of S.players) for (const x of p.hand.concat(p.melds.flatMap(m => m.tiles), p.flowers)) if (x.id === id && x.t >= 0) return x.t;
+  return null;
+}
 function resultSlip(w, parts, x){
-  const win = w.pi >= 0, mine = w.pi === 0, name = win ? S.players[w.pi].name : '';
+  const win = w.pi >= 0, mine = w.pi === 0, name = win ? S.players[w.pi].name : '', net = !!x.net;
+  const winT = () => { const h = win && w.ctx && w.ctx.winId != null ? typeById(w.ctx.winId) : null; return h == null ? 'tile' : tName(h); };
   let title, lead, fed = '';
-  if (!win){ title = 'Drawn hand'; lead = 'The wall ran out before anyone finished. Nobody pays.'; }
-  else if (mine){ title = 'You win'; lead = w.selfDrawn ? `You drew it yourself, so all three pay ${w.val}.` : `${S.players[w.ctx.from].name} threw your winning tile and pays double: ${w.val * 2}.`; }
+  if (!win){ title = 'No winner'; lead = 'The wall ran out before anyone finished. Nobody pays.'; }
+  else if (mine){ title = 'You win'; lead = w.selfDrawn ? `You drew the winning tile yourself, so all three pay you ${w.val}.` : `${S.players[w.ctx.from].name} threw your winning tile, so ${S.players[w.ctx.from].name} pays you double: ${w.val * 2}.`; }
   else {
     title = name + ' wins';
-    lead = w.selfDrawn ? `${name} drew the winning tile. Everyone pays ${w.val}.` : w.ctx.from === 0 ? `Your ${tName(S.players[w.pi].hand.find(h => h.id === w.ctx.winId).t)} finished the hand, so you pay double: ${w.val * 2}.` : `${S.players[w.ctx.from].name} threw the winning tile and pays ${w.val * 2}. You pay nothing.`;
-    const fedTs = S.fed.filter(f => f.by === w.pi).map(f => f.t);
-    if (!w.selfDrawn && w.ctx.from === 0) fedTs.push(S.players[w.pi].hand.find(h => h.id === w.ctx.winId).t);
-    fed = `<div class="fed"><span>${fedTs.length ? 'Your discards in this hand' : 'None of your discards went into this hand.'}</span>${fedTs.map(t => tileHTML(t)).join('')}</div>`;
+    lead = w.selfDrawn ? `${name} drew the winning tile. Everyone pays ${name} ${w.val}.` : w.ctx.from === 0 ? `Your ${winT()} finished ${name}'s hand, so you pay double: ${w.val * 2}.` : `${S.players[w.ctx.from].name} threw the winning tile and pays ${w.val * 2}. You pay nothing.`;
+    const fedTs = x.fedTs || S.fed.filter(f => f.by === w.pi).map(f => f.t);
+    if (!x.fedTs && !w.selfDrawn && w.ctx.from === 0){ const t = typeById(w.ctx.winId); if (t != null) fedTs.push(t); }
+    fed = `<div class="fed"><span>${fedTs.length ? 'Your tiles in this hand:' : 'None of your discards went into this hand.'}</span>${fedTs.map(t => tileHTML(t)).join('')}</div>`;
   }
-  const line = (label, fan, why, cls = '') => `<button class="ln ${cls}" data-why="${why.replace(/"/g, '&quot;')}"><span>${label}</span><b>${fan ? fan + ' fan' : ''}</b></button>`;
-  const setWhy = g => /^Chow/.test(g.label) ? 'A Chow is a run of three in one suit, like a straight. It scores nothing by itself.' : /^Pair/.test(g.label) ? 'Every winning hand needs exactly one pair.' : g.fan ? 'This set scores by itself: ' + g.fan + ' fan.' : 'A set of three or four of a kind. This one adds no fan by itself.';
-  const lines = win ? parts.groups.map(g => line(g.label, g.fan, setWhy(g), g.fan ? 'set' : 'set nofan')).concat(parts.rest.map(i => line(i.name, i.fan, explainItem(i.name)))) : [];
+  // the hand itself, set by set, then each thing that scored, each with its reason in plain words
+  const tilesOf = ids => ids.map(id => typeById(id)).filter(t => t != null).map(t => tileHTML(t)).join('');
+  const handRow = win ? `<div class="ln hand wait"><div class="htiles">${parts.groups.map(g => `<span class="hg">${tilesOf(g.ids)}</span>`).join('')}</div><small>${parts.groups.length === 7 ? 'Seven pairs.' : 'Four sets and a pair.'}</small></div>` : '';
+  const line = (label, fan, why, tiles) => `<div class="ln wait"><div class="lt"><span>${label}</span>${tiles ? `<span class="lts">${tiles}</span>` : ''}${why ? `<small>${why}</small>` : ''}</div><b>${fan} faan</b></div>`;
+  const scoring = win ? parts.groups.filter(g => g.fan).map(g => ({ fan: g.fan, html: line(g.label.replace(/, concealed$/, ''), g.fan, setWhyText(g.label), tilesOf(g.ids)) }))
+    .concat(parts.rest.map(i => { const it = itemText(i.name); return { fan: i.fan, html: line(it.label, i.fan, it.why) }; })) : [];
   const dbl = win ? Math.min(w.res.fan, 8) - 1 : 0;
-  const tot = win ? `<button class="ln tot" data-why="A hand is worth 10 points, doubled for each fan after the first${dbl ? `: 10 doubled ${dbl} ${dbl === 1 ? 'time' : 'times'} is ${w.val}` : ''}. ${w.selfDrawn ? 'Self-drawn, so each player pays that.' : 'Won on a discard, so the thrower alone pays twice that.'}"><span><i id="rFan">${x.big ? 0 : w.res.fan}</i> fan</span><b><i id="rPts">${x.big ? 0 : w.val}</i> points</b></button>` : '';
+  const tot = win ? `<div class="ln tot wait"><div class="lt"><span>Total: <i id="rFan">0</i> faan</span><small>${dbl ? `10 points, doubled ${dbl === 1 ? 'once' : dbl + ' times'}.` : 'A 1 faan hand is worth 10 points.'}</small></div><b><i id="rPts">0</i> points</b></div>` : '';
   const pays = `<div class="pays">${S.players.map((pl, q) => `<div class="${w.pay[q] > 0 ? 'up' : w.pay[q] < 0 ? 'down' : ''}"><span><i style="background:${SEAT[q].lac}"></i>${pl.name}</span><b>${w.pay[q] > 0 ? '+' : ''}${w.pay[q] || '0'}</b><small>${pl.score}</small></div>`).join('')}</div>`;
   const ri = rankInfo();
-  const rank = `<div class="rank"><span class="rseal">${ri.seal}</span><div><div class="rname">${ri.name}<small>${ri.next ? `${ri.into} of ${ri.need} to ${ri.next}` : 'Top rank'}</small></div><div class="bar"><i style="width:${Math.round(ri.frac * 100)}%"></i></div></div><span class="rgain">+${w.gain}</span></div>`;
+  const rank = net ? '' : `<div class="rank"><span class="rseal">${ri.seal}</span><div><div class="rname">${ri.name}<small>${ri.next ? `${ri.into} of ${ri.need} to ${ri.next}` : 'Top rank'}</small></div><div class="bar"><i style="width:${Math.round(ri.frac * 100)}%"></i></div></div><span class="rgain">+${w.gain}</span></div>`;
   let stand = '';
-  if (x.last && S.totalHands > 1) stand = `<div class="stand"><div class="sth">${['', 'First place', 'Second place', 'Third place', 'Fourth place'][x.place]}</div>${x.order.map((o, k) => `<div class="${o.i === 0 ? 'me' : ''}"><span>${k + 1}</span><span><i style="background:${SEAT[o.i].lac}"></i>${o.p.name}</span><b>${o.p.score}</b></div>`).join('')}</div>`;
+  if (x.last && S.totalHands > 1) stand = `<div class="stand"><div class="sth">${['', 'You came first', 'You came second', 'You came third', 'You came fourth'][x.place]}</div>${x.order.map((o, k) => { const i = o.i, sc = o.score != null ? o.score : o.p.score; return `<div class="${i === 0 ? 'me' : ''}"><span>${k + 1}</span><span><i style="background:${SEAT[i].lac}"></i>${S.players[i].name}</span><b>${sc}</b></div>`; }).join('')}</div>`;
   const news = (x.dailyLine ? [x.dailyLine] : []).concat(w.news).map(n => `<div>${n}</div>`).join('');
   let btns;
-  if (S.mode === 'tut' && !profile.kind) btns = `<div class="kinds"><div class="kq">How would you like to play from here?</div>${KINDS.map((k, i) => `<button class="tbtn kind ${i === 0 ? 'prime' : ''}" data-kind="${k.id}"><b>${k.name}</b><small>${k.line}</small></button>`).join('')}</div>`;
-  else if (S.mode === 'tut') btns = `<button class="tbtn prime big" data-r="again">Play a hand</button>`;
-  else if (!x.last) btns = `<button class="tbtn prime big" data-r="next">Next hand</button>`;
-  else btns = `<button class="tbtn" data-r="home">Home</button><button class="tbtn prime big" data-r="again">${S.mode === 'daily' || S.mode === 'weekly' ? 'Play it again' : S.totalHands > 1 ? 'New match' : 'Another hand'}</button>`;
-  if (S.mode === 'daily') btns = `<button class="tbtn" data-share>Result card</button>` + btns;
-  const tutLine = S.mode === 'tut' && mine ? '<div class="news"><div>That was a real hand, scored by the real rules. Tap any line above to see why it counts.</div></div>' : '';
+  if (net) btns = `<span class="nwait" id="nWait"></span><button class="tbtn prime big" data-r="next">${x.last ? 'Back to the table' : 'Deal next hand'}</button>`;
+  else if (S.mode === 'tut' && !profile.kind) btns = `<div class="kinds"><div class="kq">How do you want to play from here?</div>${KINDS.map((k, i) => `<button class="tbtn kind ${i === 0 ? 'prime' : ''}" data-kind="${k.id}"><b>${k.name}</b><small>${k.line}</small></button>`).join('')}</div>`;
+  else if (S.mode === 'tut') btns = `<button class="tbtn prime big" data-r="again">Play a real hand</button>`;
+  else if (!x.last) btns = `<button class="tbtn prime big" data-r="next">Deal next hand</button>`;
+  else btns = `<button class="tbtn" data-r="home">Home</button><button class="tbtn prime big" data-r="again">${S.mode === 'daily' || S.mode === 'weekly' ? 'Play it again' : S.totalHands > 1 ? 'Play a new game' : 'Deal another hand'}</button>`;
+  if (S.mode === 'daily') btns = `<button class="tbtn" data-share>Make a result card</button>` + btns;
+  const tutLine = S.mode === 'tut' && mine ? '<div class="news"><div>That was a real hand, scored by the real rules.</div></div>' : '';
+  const near = x.near != null ? x.near : nearMiss(w);
   const html = `<div class="slipwrap"><div class="slip paper ${mine ? 'mine' : ''}" role="dialog" aria-label="${title}">
     <div class="shead"><span class="seal" style="background:${win ? SEAT[w.pi].lac : '#5c4c37'}">${win ? '和' : '日'}</span><div><h2>${title}</h2><p class="lead">${lead}</p></div></div>
-    <div class="sbody">${nearMiss(w)}${win ? `<div class="lines">${lines.join('')}${tot}</div>` : ''}<div class="why" id="why"></div>
+    <div class="sbody">${near}${win ? `<div class="lines">${handRow}${scoring.map(l => l.html).join('')}${tot}</div>` : ''}
     ${pays}${fed}${stand}${news ? `<div class="news">${news}</div>` : ''}${tutLine}</div>
     <div class="sfoot">${rank}<div class="sbtns">${btns}</div></div></div></div>`;
   return new Promise((res, rej) => {
-    const my = token, root = $('#overlayRoot');
-    root.innerHTML = html;
+    const my = token, root = setOverlay(html);
     const slip = root.querySelector('.slip');
-    let alive = true;
-    const finish = () => { slip.querySelectorAll('.wait').forEach(e => e.classList.remove('wait')); if (win){ $('#rFan').textContent = w.res.fan; $('#rPts').textContent = w.val; S.revealN = parts.groups.length; render(); } };
+    let alive = true, done = !win;
+    const finish = () => {
+      if (done) return; done = true;
+      slip.querySelectorAll('.wait').forEach(e => e.classList.remove('wait'));
+      if (win){ slip.querySelector('#rFan').textContent = w.res.fan; slip.querySelector('#rPts').textContent = w.val; S.revealN = parts.groups.length; S.revealFast = true; render(); }
+    };
+    const go = v => { alive = false; leave(root, 200); if (my !== token) rej(ABORT); else res(v); };
     slip.addEventListener('click', e => {
-      const kb = e.target.closest('[data-kind]'); if (kb){ setKind(kb.dataset.kind); alive = false; root.innerHTML = ''; if (my !== token) rej(ABORT); else res('again'); return; }
+      const kb = e.target.closest('[data-kind]'); if (kb){ setKind(kb.dataset.kind); go('again'); return; }
       if (e.target.closest('[data-share]')){ shareCard(w); return; }
       const b = e.target.closest('[data-r]');
-      if (b){ alive = false; root.innerHTML = ''; if (my !== token) rej(ABORT); else res(b.dataset.r); return; }
-      const l = e.target.closest('[data-why]'); if (l){ $('#why').textContent = l.dataset.why; slip.querySelectorAll('.ln.on').forEach(o => o.classList.remove('on')); l.classList.add('on'); }
+      if (b && net){ finish(); b.disabled = true; b.textContent = x.last ? 'Going back to the table' : 'Ready for the next hand'; NET.iAmNext(); return; }
+      if (b){ finish(); go(b.dataset.r); return; }
+      finish(); // a tap anywhere else on the slip shows the whole count at once
     });
+    S.slipSkip = finish;
     const prime = slip.querySelector('.prime'); if (prime) prime.focus({ preventScroll:true });
-    if (!x.big) return;
-    // a big hand is counted out: one set at a time, then the patterns, then the total
+    if (!win) return;
+    // counted out line by line: the hand lays down set by set, then each thing that scored, then the total
     (async () => {
-      const els = [...slip.querySelectorAll('.lines .ln')]; els.forEach(e => e.classList.add('wait'));
-      const wait = ms => new Promise(r => setTimeout(r, ms * (settings.pace === 'fast' ? .5 : 1)));
-      let fan = 0, hid = 0;
-      for (let i = 0; i < els.length - 1 && alive && my === token; i++){
-        const g = parts.groups[i];
-        if (g){ if (g.hidden){ hid++; S.revealN = hid; render(); } snd('place'); fan += g.fan; }
-        else { snd('tick'); fan += parts.rest[i - parts.groups.length].fan; }
-        els[i].classList.remove('wait'); $('#rFan').textContent = fan;
-        await wait(g ? 430 : 300);
+      const wait = ms => new Promise(r => setTimeout(r, ms * (pace().f < 1 ? .6 : 1) * (reducedUI() ? .5 : 1)));
+      const ok = () => alive && my === token && !done;
+      const hr = slip.querySelector('.ln.hand');
+      if (hr){ hr.classList.remove('wait'); const gs = [...hr.querySelectorAll(".hg")]; gs.forEach(g => g.classList.add('wait'));
+        for (let k = 0; k < gs.length && ok(); k++){ gs[k].classList.remove('wait'); S.revealN = k + 1; render(); await wait(x.big ? 300 : 210); } }
+      const els = [...slip.querySelectorAll('.lines .ln:not(.hand):not(.tot)')];
+      let fan = 0; const fanEl = slip.querySelector('#rFan'), totEl = slip.querySelector('.ln.tot');
+      if (totEl && ok()){ totEl.classList.remove('wait'); }
+      for (let i = 0; i < els.length && ok(); i++){
+        els[i].classList.remove('wait'); snd(i === els.length - 1 ? 'place' : 'tick');
+        fan += scoring[i].fan; fanEl.textContent = fan;
+        await wait(x.big ? 380 : 260);
       }
-      if (!alive || my !== token) return;
-      els[els.length - 1].classList.remove('wait');
-      for (let k = 1; k <= 14 && alive && my === token; k++){ $('#rPts').textContent = Math.round(w.val * k / 14 / 10) * 10; if (k % 3 === 0) snd('tick'); await wait(42); }
-      if (alive && my === token){ finish(); if (mine) paintWin(1700); }
+      if (!ok()) return;
+      const pts = slip.querySelector('#rPts');
+      for (let k = 1; k <= 12 && ok(); k++){ pts.textContent = Math.round(w.val * k / 12 / 10) * 10; await wait(36); }
+      if (ok()){ finish(); if (mine && x.big) paintWin(1700); }
     })();
   });
 }

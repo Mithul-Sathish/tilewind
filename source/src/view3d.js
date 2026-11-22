@@ -13,10 +13,14 @@ let slowUntil = 0, tier = 1, lowStep = 0, qN = 0, qSum = 0, qSkip = 40, pxCap = 
 const par = { x: 0, z: 0, tx: 0, tz: 0 };
 let cos = { back: null, lamp: null, tint: 0xffffff, light: false }, settle = 0, settleV = 0, flick = 0;
 let running = false, lastT = 0, needFrame = false;
+let booting = true, hurryUntil = 0, expo = 1, expoT = 1, expoK = 1.6, dip = 0, dipT = 0, dipCb = null, rackY = 0, camInit = false, flipF = -1, flipWind = null;
+const discT = new T3.Vector3(); let discSet = false;
+const prof = { on: false, label: '', sync: false, frames: [] };
 const scene = new T3.Scene(), hscene = new T3.Scene();
 const cam = new T3.PerspectiveCamera(28, 1, 1, 600), hcam = new T3.PerspectiveCamera(22, 1, .5, 400);
 const tmpV = new T3.Vector3(), tmpV2 = new T3.Vector3(), tmpQ = new T3.Quaternion(), tmpQ2 = new T3.Quaternion(), tmpE = new T3.Euler(0, 0, 0, 'YXZ');
 const rand = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const STILL_ORDER = [...Array(144).keys()].sort((a, b) => rand(a + 7) - rand(b + 7));
 
 /* ---------- geometry ---------- */
 function roundedBox(w, h, d, seg, r){
@@ -277,7 +281,7 @@ function buildTable(){
     const tex = new T3.CanvasTexture(c); tex.colorSpace = T3.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     const mat = new T3.MeshPhysicalMaterial({ map: tex, roughness: .5, clearcoat: .6, clearcoatRoughness: .45, envMapIntensity: .35, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0 });
     const top = new T3.Mesh(new T3.PlaneGeometry(8.44, 1.3), mat); top.rotation.x = -Math.PI / 2; top.position.y = .122; top.receiveShadow = true;
-    g.add(base, top); g.position.set(x, .83, z); g.rotation.y = (s === 2 ? 0 : s * 90) * DEG; g.visible = false; scene.add(g);
+    g.add(base, top); g.position.set(x, .83, z); g.rotation.order = 'YXZ'; g.rotation.y = (s === 2 ? 0 : s * 90) * DEG; g.visible = false; scene.add(g);
     plaques.push({ g, base, top, c, tex, mat, key: '' });
   }
   // a thin lacquer line along the inside edge of each seat's discards, in that seat's colour, so you can tell whose grid is whose
@@ -303,7 +307,11 @@ function buildTable(){
 }
 function drawPlaque(s){
   const P = plaques[s], p = S.players[s], w = (s - S.dealer + 4) % 4, portrait = W < H * .9, on = S.turn === s;
-  const key = [p.score, w, portrait, on, theme && theme.id].join();
+  P.s = s; if (P.shown == null || P.who !== p.name) P.shown = p.score; P.who = p.name; P.target = p.score;
+  if (P.wind != null && P.wind !== w && fixIn > .5 && !reduced() && P.flipF == null){ P.flipF = 0; P.flipTo = w; wake(); }
+  if (P.flipF != null && P.flipF < .5) return;
+  P.wind = w;
+  const key = [P.shown, w, portrait, on, theme && theme.id, p.name].join();
   if (P.key === key) return; P.key = key;
   const g = P.c.getContext('2d'), a = SEAT[s];
   g.fillStyle = a.lac; g.fillRect(0, 0, 1024, 160);
@@ -311,19 +319,21 @@ function drawPlaque(s){
   g.fillStyle = a.ink; g.textBaseline = 'middle';
   g.font = "118px TWbrush"; g.textAlign = 'center'; g.fillText(WIND_HAN[w], 92, 84);
   g.globalAlpha = .5; g.fillRect(170, 30, 3, 100); g.globalAlpha = 1;
-  g.font = "600 84px TWserif"; g.textAlign = 'left'; g.fillText(p.name, 200, 84);
-  g.font = "600 118px TWserif"; g.textAlign = 'right'; g.fillText(String(p.score), 990, 82);
+  g.font = "600 84px TWserif"; g.textAlign = 'left'; g.fillText(p.name, 200, 84, 520);
+  g.font = "600 118px TWserif"; g.textAlign = 'right'; g.fillText(String(P.shown), 990, 82);
   P.tex.needsUpdate = true; P.mat.emissiveIntensity = on ? .2 : 0;
 }
-function drawMarker(){
+function drawMarker(force){
   const left = S.wall.length, key = [S.roundWind, S.handNo, S.totalHands, left, S.mode].join();
-  if (marker.key === key) return; marker.key = key;
+  if (!force && marker.wind != null && marker.wind !== S.roundWind && fixIn > .5 && !reduced()){ if (flipF < 0){ flipF = 0; flipWind = S.roundWind; wake(); } return; }
+  if (!force && flipF >= 0 && flipF < .5) return;
+  if (marker.key === key) return; marker.key = key; marker.wind = S.roundWind;
   const g = marker.c.getContext('2d');
   g.fillStyle = '#E9DFC8'; g.fillRect(0, 0, 512, 512);
   g.strokeStyle = '#B3261E'; g.lineWidth = 5; g.beginPath(); g.arc(256, 256, 232, 0, 7); g.stroke();
   g.fillStyle = '#B3261E'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = "216px TWbrush"; g.fillText(WIND_HAN[S.roundWind], 256, 180);
   g.fillStyle = '#2A2117'; g.font = "600 132px TWserif"; g.fillText(String(left), 256, 372);
-  g.font = "600 40px TWserif"; g.globalAlpha = .7; g.fillText('LEFT', 256, 452); g.globalAlpha = 1;
+  g.font = "600 46px TWserif"; g.globalAlpha = .7; g.fillText('tiles left', 256, 452); g.globalAlpha = 1;
   marker.tex.needsUpdate = true;
 }
 function buildRack(){
@@ -344,7 +354,15 @@ function rackBar(len){
 /* ---------- tiles ---------- */
 const tiles = []; // by id: main-scene objects
 const hand = new Map(); // id -> hand-scene objects (created when needed)
-const typeOf = id => id < 136 ? Math.floor(id / 4) : 34 + (id - 136);
+const typeOf0 = id => id < 136 ? Math.floor(id / 4) : 34 + (id - 136);
+const TY = Array.from({ length: 144 }, (_, id) => typeOf0(id)); // the face each id shows; at a table with friends ids are dealt at random
+const typeOf = id => TY[id];
+function retype(id, t){
+  if (t == null || t < 0 || TY[id] === t) return; TY[id] = t;
+  const o = tiles[id]; if (o){ o.t = t; o.face.geometry = faceGeos[t]; }
+  const h = hand.get(id); if (h){ h.t = t; h.face.geometry = faceGeos[t]; }
+}
+function resetTypes(){ for (let id = 0; id < 144; id++) retype(id, typeOf0(id)); }
 function makeTileMesh(t, own){
   const g = new T3.Group();
   const mats = own ? [M.ivory.clone(), M.jade, M.seam] : BODY_MATS();
@@ -436,18 +454,18 @@ function setTarget(o, p, opts = {}){
   o.tgt = p; o.active = true;
   // unwrap angles so a tile turns the short way round
   for (const k of ['rx', 'ry', 'rz']){ const cur = o.rot[k === 'rx' ? 'x' : k === 'ry' ? 'y' : 'z']; p[k] += Math.round((cur - p[k]) / (2 * Math.PI)) * 2 * Math.PI; }
-  if (opts.arc){
-    const d = Math.hypot(p.x - o.pos.x, p.z - o.pos.z);
-    if (d > 1.2) o.via = { x: (o.pos.x + p.x) / 2, y: Math.max(o.pos.y, p.y) + 1.4 + Math.min(d * .08, 1.2), z: (o.pos.z + p.z) / 2 };
-  }
-  if (opts.hop) o.via = { x: p.x, y: p.y + 1.05, z: p.z };
-  if (opts.snd) o.landSnd = opts.snd;
-  if (opts.wait) o.wait = opts.wait;
+  const vias = [], d = Math.hypot(p.x - o.pos.x, p.z - o.pos.z);
+  if (opts.arc && d > 1.2) vias.push({ x: (o.pos.x + p.x) / 2, y: Math.max(o.pos.y, p.y) + 1.1 + Math.min(d * .07, 1.1), z: (o.pos.z + p.z) / 2, r: .6 });
+  if (opts.hop) vias.push({ x: p.x, y: p.y + 1.05, z: p.z, r: .55 });
+  if (opts.slide && d > 1.2){ const s2 = .34 * (p.sc || 1); vias.push({ x: p.x - (p.x - o.pos.x) / d * s2, y: p.y + .025, z: p.z - (p.z - o.pos.z) / d * s2, r: .09, touch: true }); }
+  o.vias = vias.length ? vias : null; o.via = o.vias ? o.vias[0] : null;
+  o.landSnd = opts.snd || null;
+  o.wait = opts.wait || 0;
   if (!prev && !opts.keepPos) snap(o);
   wake();
 }
 function snap(o){
-  const p = o.tgt; o.pos.set(p.x, p.y, p.z); o.rot.set(p.rx, p.ry, p.rz); o.sc = p.sc; o.vel.set(0, 0, 0); o.rvel.set(0, 0, 0); o.sv = 0; o.via = null; apply(o);
+  const p = o.tgt; o.pos.set(p.x, p.y, p.z); o.rot.set(p.rx, p.ry, p.rz); o.sc = p.sc; o.vel.set(0, 0, 0); o.rvel.set(0, 0, 0); o.sv = 0; o.via = null; o.vias = null; apply(o);
 }
 function apply(o){
   o.g.position.copy(o.pos); o.g.rotation.set(o.rot.x, o.rot.y, o.rot.z, 'YXZ'); o.g.scale.setScalar(o.sc);
@@ -456,38 +474,44 @@ function apply(o){
     o.shadow.visible = !!show;
     if (show){
       const standing = Math.abs(Math.cos(o.rot.x)) < .5;
-      o.shadow.position.set(o.pos.x, .006, o.pos.z); o.shadow.rotation.set(-Math.PI / 2, o.rot.y, 0, 'YXZ');
-      o.shadow.scale.set(o.sc * 1.0, o.sc * (standing ? .62 : 1), 1);
       const lift = Math.max(0, o.pos.y - (standing ? STAND : LIE));
-      o.shadow.material === M.shadow && (o.shadow.visible = lift < 2.2);
-      o.shadow.scale.multiplyScalar(1 + lift * .25);
+      o.shadow.position.set(o.pos.x + lift * .32, .006, o.pos.z + lift * .22); o.shadow.rotation.set(-Math.PI / 2, o.rot.y, 0, 'YXZ');
+      o.shadow.scale.set(o.sc * 1.0, o.sc * (standing ? .62 : 1), 1);
+      o.shadow.visible = lift < 2.6;
+      o.shadow.scale.multiplyScalar(1 + lift * .38);
     }
   }
 }
 let landClock = 0;
+function landed(o){
+  const k = o.landSnd; o.landSnd = null; if (!k) return;
+  const now = performance.now(); if (now - landClock > 28){ snd(k); landClock = now; }
+  if (k === 'pung' || k === 'kong' || k === 'chow'){ if (!reduced()){ settleV -= (k === 'chow' ? .45 : k === 'kong' ? 1 : .8) * 1.1; if (k === 'kong') flick = 1; } }
+}
 function step(o, dt){
   if (!o.active) return false;
   if (o.wait > 0){ o.wait -= dt; return true; }
-  const p = o.via || o.tgt, k = o.via ? K_SPRING * .7 : K_SPRING;
-  const ax = k * (p.x - o.pos.x) - C_DAMP * o.vel.x, ay = k * (p.y - o.pos.y) - C_DAMP * o.vel.y, az = k * (p.z - o.pos.z) - C_DAMP * o.vel.z;
+  const rm = reduced(), K = rm ? 640 : K_SPRING, C = rm ? 50 : C_DAMP;
+  const p = o.via || o.tgt, k = o.via ? (o.via.touch ? K * 1.5 : K * .7) : K;
+  const ax = k * (p.x - o.pos.x) - C * o.vel.x, ay = k * (p.y - o.pos.y) - C * o.vel.y, az = k * (p.z - o.pos.z) - C * o.vel.z;
   o.vel.x += ax * dt; o.vel.y += ay * dt; o.vel.z += az * dt;
   o.pos.addScaledVector(o.vel, dt);
   const t = o.tgt;
-  const rx = K_SPRING * (t.rx - o.rot.x) - C_DAMP * o.rvel.x, ry = K_SPRING * (t.ry - o.rot.y) - C_DAMP * o.rvel.y, rz = K_SPRING * (t.rz - o.rot.z) - C_DAMP * o.rvel.z;
+  const rx = K * (t.rx - o.rot.x) - C * o.rvel.x, ry = K * (t.ry - o.rot.y) - C * o.rvel.y, rz = K * (t.rz - o.rot.z) - C * o.rvel.z;
   o.rvel.x += rx * dt; o.rvel.y += ry * dt; o.rvel.z += rz * dt; o.rot.addScaledVector(o.rvel, dt);
-  o.sv += (K_SPRING * (t.sc - o.sc) - C_DAMP * o.sv) * dt; o.sc += o.sv * dt;
-  if (o.via && Math.hypot(o.via.x - o.pos.x, o.via.y - o.pos.y, o.via.z - o.pos.z) < .55) o.via = null;
+  o.sv += (K * (t.sc - o.sc) - C * o.sv) * dt; o.sc += o.sv * dt;
+  if (o.via && Math.hypot(o.via.x - o.pos.x, o.via.y - o.pos.y, o.via.z - o.pos.z) < o.via.r){ const was = o.via; o.vias.shift(); o.via = o.vias[0] || null; if (was.touch) landed(o); }
   if (o.glow !== o.glowT){ o.glow += (o.glowT - o.glow) * Math.min(1, dt * 14); if (Math.abs(o.glow - o.glowT) < .002) o.glow = o.glowT; if (o.mats[0].emissive){ o.mats[0].emissive.setRGB(o.glow, o.glow * .93, o.glow * .82); o.fmat.emissive.setRGB(o.glow, o.glow * .93, o.glow * .82); } }
   const err = Math.abs(t.x - o.pos.x) + Math.abs(t.y - o.pos.y) + Math.abs(t.z - o.pos.z) + Math.abs(t.rx - o.rot.x) + Math.abs(t.ry - o.rot.y) + Math.abs(t.rz - o.rot.z) + Math.abs(t.sc - o.sc);
   const spd = o.vel.length() + o.rvel.length() + Math.abs(o.sv);
-  if (o.landSnd && !o.via && err < .05 && t.y < 1.5){ const now = performance.now(); if (now - landClock > 28){ snd(o.landSnd); landClock = now; } o.landSnd = null; }
+  if (o.landSnd && !o.via && err < .05 && t.y < 1.5) landed(o);
   if (!o.via && err < .0015 && spd < .004 && o.glow === o.glowT){ snap(o); o.active = false; return false; }
   apply(o); return true;
 }
 
 /* ---------- camera ---------- */
 let pushZoom = .14, push = 0, pushV = 0, pushT = 0, pushX = 0, pushZ = 0, tableView = false;
-const cv = { R: 70, tilt: 20 * DEG, tx: 0, tz: 0 }, ct = { R: 70, tilt: 20 * DEG, tx: 0, tz: 0 };
+const cv = { R: 70, tilt: 20 * DEG, tx: 0, tz: 0 }, ct = { R: 70, tilt: 20 * DEG, tx: 0, tz: 0 }, cvV = { R: 0, tilt: 0, tx: 0, tz: 0 };
 function placeCam(c, R, tx, tz, ox = 0, oz = 0, tilt = cv.tilt){ c.position.set(tx + ox, R * Math.cos(tilt), tz + R * Math.sin(tilt) + oz); c.lookAt(tx, 0, tz); c.updateMatrixWorld(); }
 /* what the camera must show. A tall phone frames the discards and melds edge to edge (the side walls and the
    side players' hidden tiles fall outside the frame); a wide screen shows the whole table; table view looks straight down. */
@@ -511,7 +535,7 @@ function fitCamera(snapNow = true){
     const fits = pts.every(p => { tmpV.copy(p).project(test); return Math.abs(tmpV.x) <= b.frac && Math.abs(tmpV.y) <= b.frac; });
     if (fits) hi = mid; else lo = mid;
   }
-  Object.assign(ct, { R: hi, tilt, tx, tz }); if (snapNow) Object.assign(cv, ct);
+  Object.assign(ct, { R: hi, tilt, tx, tz }); if (snapNow){ Object.assign(cv, ct); cvV.R = cvV.tilt = cvV.tx = cvV.tz = 0; }
   cam.aspect = aspect; cam.setViewOffset(W, vh, 0, 0, W, H); cam.updateProjectionMatrix();
   updateCam(); wake();
 }
@@ -544,9 +568,10 @@ function resize(){
   W = innerWidth; H = innerHeight;
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, pxCap)); renderer.setSize(W, H, false);
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-  const oldRows = rows; computeHandH(); if (rows !== oldRows || !rackBars.length) layoutRack();
+  const oldRows = rows, oldH = handH; computeHandH(); if (rows !== oldRows || !rackBars.length) layoutRack();
   rackGroup.visible = handH > 0; rackLedge.visible = handH > 0; rackLedge.position.z = rows === 1 ? 2.1 : 1.3;
-  fitCamera(); fitHand();
+  if (handH > 0 && !oldH && camInit && !reduced()){ rackY = -3.2; rackGroup.position.y = rackY; rackLedge.position.y = -.3 + rackY; } // the rack slides up into view
+  fitCamera(!camInit); camInit = true; fitHand();
   document.documentElement.style.setProperty('--handH', handH + 'px'); document.documentElement.style.setProperty('--stripH', stripH + 'px');
   if (S && mode === 'game' && lastHandKey !== null) sync();
   invalidate(); positionLabels();
@@ -558,7 +583,16 @@ function invalidate(){ wake(); }
 function frame(now){
   const raw = now - lastT, dt = Math.min(.05, raw / 1000); lastT = now;
   let busy = false;
-  const slow = now < slowUntil ? .32 : 1;
+  const slow = now < slowUntil ? .32 : now < hurryUntil ? 2.6 : 1;
+  // the lamp: warms up at the start, dips while a table is changed
+  if (Math.abs(expo - expoT) > .002){ expo += (expoT - expo) * Math.min(1, dt * expoK); busy = true; } else expo = expoT;
+  if (dipT !== dip){ const sp = dt / (dipT > dip ? .2 : .32); dip = dipT > dip ? Math.min(dipT, dip + sp) : Math.max(dipT, dip - sp); if (dip >= 1 && dipCb){ const cb = dipCb; dipCb = null; cb(); dipT = 0; } busy = true; }
+  renderer.toneMappingExposure = Math.max(.02, expo * (1 - dip * .62));
+  if (Math.abs(rackY) > .002){ rackY += (0 - rackY) * Math.min(1, dt * 7); rackGroup.position.y = rackY; rackLedge.position.y = -.3 + rackY; busy = true; } else if (rackY){ rackY = 0; rackGroup.position.y = 0; rackLedge.position.y = -.3; }
+  if (dealerDisc && dealerDisc.position.distanceToSquared(discT) > .0004){ dealerDisc.position.lerp(discT, Math.min(1, dt * 3.2)); dealerDisc.position.y = .86 + Math.sin(Math.min(1, dealerDisc.position.distanceTo(discT) / 6) * Math.PI) * .8; busy = true; }
+  if (flipF >= 0){ flipF += dt / .62; if (flipF >= .5 && flipWind != null){ marker.key = ''; flipWind = null; drawMarker(true); } if (flipF >= 1){ flipF = -1; marker.g.rotation.x = 0; marker.g.position.y = 0; } else { marker.g.rotation.x = Math.sin(flipF * Math.PI) * Math.PI / 2; marker.g.position.y = Math.sin(flipF * Math.PI) * .9; } busy = true; }
+  for (const P of plaques){ if (P.flipF != null){ P.flipF += dt / .5; if (P.flipF >= .5 && P.wind !== P.flipTo){ P.wind = P.flipTo; P.key = ''; if (S) drawPlaque(P.s); } if (P.flipF >= 1){ P.flipF = null; P.g.rotation.x = 0; } else P.g.rotation.x = Math.sin(P.flipF * Math.PI) * Math.PI / 2 * (P.s === 0 ? -1 : 1); busy = true; } }
+  for (const P of plaques){ if (P.shown != null && P.shown !== P.target){ const d = P.target - P.shown, st = Math.sign(d) * Math.max(1, Math.round(Math.abs(d) * Math.min(1, dt * 7))); P.shown = Math.abs(st) >= Math.abs(d) ? P.target : P.shown + st; P.key = ''; if (P.s != null && S) drawPlaque(P.s); busy = true; } }
   const sub = window.TW_fast ? 30 : 2, h = window.TW_fast ? .016 : dt / sub * slow;
   // lamps ease toward whoever is to play
   if (Math.abs(warm - warmT) > .004 || Math.abs(turnI - turnIT) > .004 || turnPos.distanceToSquared(turnPosT) > .0004){
@@ -567,19 +601,26 @@ function frame(now){
     turnSpot.intensity = turnI * 1.5; turnSpot.target.position.copy(turnPos); turnSpot.position.set(turnPos.x * .8, 26, turnPos.z * .8);
     busy = true;
   }
-  if (Math.abs(cv.R - ct.R) > .01 || Math.abs(cv.tilt - ct.tilt) > .0005 || Math.abs(cv.tz - ct.tz) > .003){ const k = Math.min(1, dt * 4.2); cv.R += (ct.R - cv.R) * k; cv.tilt += (ct.tilt - cv.tilt) * k; cv.tz += (ct.tz - cv.tz) * k; cv.tx += (ct.tx - cv.tx) * k; busy = true; }
+  if (!(drag && drag.moved) && (Math.abs(cv.R - ct.R) > .01 || Math.abs(cv.tilt - ct.tilt) > .0005 || Math.abs(cv.tz - ct.tz) > .003 || Math.abs(cvV.R) > .01)){
+    const w = reduced() ? 14 : 6.2;
+    for (const k of ['R', 'tilt', 'tx', 'tz']){ const a = w * w * (ct[k] - cv[k]) - 2 * w * cvV[k]; cvV[k] += a * dt; cv[k] += cvV[k] * dt; }
+    busy = true;
+  } else if (!(drag && drag.moved)){ Object.assign(cv, ct); cvV.R = cvV.tilt = cvV.tx = cvV.tz = 0; }
   if (Math.abs(par.x - par.tx) > .002 || Math.abs(par.z - par.tz) > .002){ const k = Math.min(1, dt * 4); par.x += (par.tx - par.x) * k; par.z += (par.tz - par.z) * k; busy = true; }
   for (let s = 0; s < sub; s++){
-    for (const o of tiles){ if (o.xferAt && now >= o.xferAt){ o.xferAt = 0; doXfer(o); } if (step(o, h)) busy = true; }
+    for (const o of tiles){ if (o.pendingHand && readyToXfer(o, now)) doXfer(o); if (step(o, h)) busy = true; }
     for (const o of hand.values()) if (step(o, h)) busy = true;
-    // camera push
-    if (Math.abs(push - pushT) > .0004 || Math.abs(pushV) > .0004){ const a = 9 * (pushT - push) - 6 * pushV; pushV += a * h; push += pushV * h; busy = true; }
+    // camera push (held still while a tile is being dragged)
+    if (!(drag && drag.moved) && (Math.abs(push - pushT) > .0004 || Math.abs(pushV) > .0004)){ const a = 9 * (pushT - push) - 6 * pushV; pushV += a * h; push += pushV * h; busy = true; }
   }
-  for (const o of tiles) if (o.xferAt) busy = true;
-  if (Math.abs(settle) > .0005 || Math.abs(settleV) > .0005){ settleV += (-140 * settle - 15 * settleV) * dt; settle += settleV * dt; busy = true; } else { settle = 0; settleV = 0; }
+  for (const o of tiles) if (o.pendingHand) busy = true;
+  if (fixtures(dt)) busy = true;
+  if (!(drag && drag.moved) && (Math.abs(settle) > .0005 || Math.abs(settleV) > .0005)){ settleV += (-140 * settle - 15 * settleV) * dt; settle += settleV * dt; busy = true; } else { settle = 0; settleV = 0; }
   if (flick > .004){ flick *= Math.exp(-dt * 4.5); spot.intensity = 6.6 * (1 + flick * .22); spot.color.copy(lampCol).lerp(warmCol, Math.min(1, flick * .8)); busy = true; } else if (flick){ flick = 0; spot.intensity = 6.6; spot.color.copy(lampCol); }
   updateCam(); cam.position.y += settle; cam.updateMatrixWorld();
+  const c0 = prof.on ? performance.now() : 0;
   draw();
+  if (prof.on){ if (prof.sync){ const g = renderer.getContext(), px = new Uint8Array(4); g.readPixels(0, 0, 1, 1, g.RGBA, g.UNSIGNED_BYTE, px); } prof.frames.push({ l: prof.label, raw, cost: performance.now() - c0, js: c0 - now }); }
   window.TW_busy = busy;
   // hold the frame rate: give up shadow quality first, resolution last
   if (busy && !window.TW_fast && raw < 120){
@@ -617,7 +658,9 @@ function applyTier(){
   resize();
 }
 function setTier(t){ if (!ok) return; if (t === 'auto' || t == null){ tier = detectTier(); window.TW_auto = true; } else { tier = +t; window.TW_auto = false; } lowStep = 0; applyTier(); }
+const NOGL = /[?&]nogl=1/.test(location.search); // test only: run every motion but skip drawing, for many windows on one machine
 function draw(){
+  if (NOGL) return;
   renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
   renderer.clear(true, true, true);
   renderer.render(scene, cam);
@@ -648,8 +691,9 @@ function fromHandToMain(h, m){
 }
 function doXfer(o){
   const h = handTile(o.id);
-  if (o.pendingHand){ fromMainToHand(o, h); o.g.visible = false; o.shadow.visible = false; o.active = false; h.g.visible = true; h.tgt = null; setTarget(h, o.pendingHand, { keepPos: true, snd: 'place' }); o.pendingHand = null; }
+  if (o.pendingHand){ fromMainToHand(o, h); h.vel.copy(o.vel).multiplyScalar(fHand() / Math.max(1, fMain()) * .4); o.g.visible = false; o.shadow.visible = false; o.active = false; h.g.visible = true; h.tgt = null; const pz = o.pendingHand; o.pendingHand = null; setTarget(h, pz, { keepPos: true, snd: dealPhase === 2 ? null : 'place' }); }
 }
+const readyToXfer = (o, now) => o.pendingHand && o.wait <= 0 && !o.via && (now > o.exitBy || (o.tgt && Math.abs(o.tgt.x - o.pos.x) + Math.abs(o.tgt.y - o.pos.y) + Math.abs(o.tgt.z - o.pos.z) < 1.1));
 
 /* ---------- page elements that follow the table ---------- */
 let labelsDirty = true;
@@ -663,99 +707,171 @@ function rackOrder(){
   placed.splice(Math.min(drag.ins, placed.length), 0, drag.id);
   return { ids: placed.concat(loose), loose: loose.length };
 }
-/* ---------- reading the game state ---------- */
-let lastHandKey = null, dealPhase = 0, lastDiscardId = null;
+/* ---------- reading the game state ----------
+   Every tile is always somewhere on the table: in the wall, a hand, a set, the discards, or in the pile while the tiles are washed.
+   Nothing appears or vanishes; a tile that changes place travels there. Deal phases:
+   'wash'  every tile face down, swept into the middle and turned over by hand
+   1       the wall is built from the pile, stack by stack
+   2       tiles go out in fours to each seat; yours land face down on the rack in the order dealt
+   3       your tiles stand up, one after another
+   4       your tiles slide into order
+   0       play */
+let lastHandKey = null, dealPhase = 0, lastDiscardId = null, washTurn = 0, dealOrder = null;
 const rimOn = new Set();
+const RMQ = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+const reduced = () => RMQ.matches;
+/* the pile while the tiles are washed: a loose ring around the marker, every tile face down at its own angle */
+const WASH = (() => {
+  const out = [];
+  for (let r = 3.3; out.length < 220 && r < 10.6; r += 1.42){
+    const n = Math.floor(2 * Math.PI * r / 1.5);
+    for (let k = 0; k < n; k++){ const a = k / n * 2 * Math.PI + r; out.push({ r, a }); }
+  }
+  return out;
+})();
+function washPose(id, turn){
+  const k = Math.floor(rand(id * 7.3 + 1.1 + Math.floor(washTurn / 2) * 3.7) * WASH.length), sl = WASH[(k + id * 37) % WASH.length];
+  const a = sl.a + turn * .55 + (rand(id + 3.3) - .5) * .25, r = sl.r + (rand(id * 1.9 + turn) - .5) * .5;
+  return { x: Math.cos(a) * r, y: LIE + rand(id * 2.1) * .02, z: Math.sin(a) * r * .92, rx: DOWN, ry: rand(id * 5.1 + turn) * Math.PI * 2, rz: 0, sc: 1 };
+}
+/* the deal goes out in packets of four: three rounds of four to each seat, then one each */
+function packetOf(i){
+  if (i >= 52) return { p: 16 + (i - 52), q: 0 };
+  const r = Math.floor(i / 4), k = i % 4;
+  return r < 12 ? { p: Math.floor(r / 4) * 4 + k, q: r % 4 } : { p: 12 + k, q: 0 };
+}
+const DEAL_GAP = .072; // seconds between packets
+function exitPose(x){ return { x: Math.max(-8, Math.min(8, x * .7)), y: 2.4, z: 12.8, rx: 52 * DEG, ry: 0, rz: 0, sc: 1 }; }
+let lastMeldKey = new Map(), lastRackIdx = new Map();
 function sync(){
   if (!ok || mode !== 'game' || !S || !S.slot) return;
-  const want = new Map(); // id -> {where, pose, arc, snd}
+  const want = new Map(); // id -> {where, pose, arc, snd, wait, slide}
   const key = S.handNo + ':' + S.dealer + ':' + S.slotKey;
   const fresh = key !== lastHandKey;
-  if (fresh){ lastHandKey = key; pushT = 0; }
-  // the wall, with single tiles dropping to the bottom of their stack
-  const stackCount = new Array(72).fill(0), stackOf = new Map();
-  const wallIds = dealPhase === 1 ? [...S.slot.keys()] : S.wall.map(x => x.id);
-  for (const id of wallIds){ const st = slotStack(S.slot.get(id), S.dealer, S.handNo); stackCount[st.g]++; stackOf.set(id, st); }
-  for (const id of wallIds){ const st = stackOf.get(id); want.set(id, { where: 'main', pose: wallPose(st.g, st.top && stackCount[st.g] === 2 ? 1 : 0, id) }); }
-  if (dealPhase !== 1){
+  if (fresh){ lastHandKey = key; pushT = 0; lastMeldKey = new Map(); }
+  const lesson = S.mode === 'lesson', rm = reduced();
+  if (dealPhase === 'wash'){
+    for (const o of tiles) want.set(o.id, { where: 'main', pose: washPose(o.id, washTurn & 1), wait: rm ? 0 : rand(o.id * 3.1) * .22, snd: null });
+  } else {
+    // the wall, with single tiles dropping to the bottom of their stack
+    const stackCount = new Array(72).fill(0), stackOf = new Map();
+    const wallIds = dealPhase === 1 ? [...S.slot.keys()] : S.wall.map(x => x.id);
+    for (const id of wallIds){ const st = slotStack(S.slot.get(id), S.dealer, S.handNo); stackCount[st.g]++; stackOf.set(id, st); }
+    for (const id of wallIds){
+      const st = stackOf.get(id), side = Math.floor(st.g / 18);
+      want.set(id, { where: 'main', pose: wallPose(st.g, st.top && stackCount[st.g] === 2 ? 1 : 0, id), wait: dealPhase === 1 && !rm ? (st.g % 18) * .03 + side * .05 + (st.top ? .05 : 0) : 0, snd: dealPhase === 1 && st.top && st.g % 3 === 0 ? 'deal' : null, arc: dealPhase === 1 });
+    }
+  }
+  const dealing = dealPhase === 2 || dealPhase === 3;
+  if (dealPhase !== 1 && dealPhase !== 'wash'){
     S.players.forEach((p, pi) => {
-      // concealed hand
       const winner = S.turn === -1 && S.reveal === pi;
       const drawn = p.hand.find(x => x.id === p.drawnId);
+      const dealt = id => { const i = S.dealt && S.dealt.get(id); return i == null ? null : packetOf(i); };
+      const dwait = id => { const d = dealt(id); return d && !rm ? d.p * DEAL_GAP + d.q * .022 : 0; };
       if (winner && S.groups){
-        // the winning hand laid open, set by set
-        const hid = S.groups.filter(g => g.hidden), stepW = pi % 2 ? 1.36 : 1.02, gap = .34;
+        // the winning hand laid open in order, a tile at a time, the sets a little apart
+        const hid = S.groups.filter(g => g.hidden), stepW = pi % 2 ? 1.36 : 1.02, gap = .5;
         const total = hid.reduce((a, g) => a + g.ids.length * stepW, 0) + gap * Math.max(0, hid.length - 1);
-        let u = -total / 2 + stepW / 2;
-        hid.forEach((g, gi) => { for (const id of g.ids){ want.set(id, { where: 'main', arc: true, snd: gi < S.revealN ? 'place' : null, pose: Object.assign(pose(pi, u, 12.45, LIE, gi < S.revealN ? 0 : DOWN, 0, 1, id), { ry: 0 }) }); u += stepW; } u += gap; });
+        let u = -total / 2 + stepW / 2, n = 0;
+        hid.forEach((g, gi) => { const open = gi < S.revealN; for (const id of g.ids){ want.set(id, { where: 'main', arc: true, snd: open ? 'place' : null, wait: open && !rm ? (S.revealFast ? 0 : n * .05 + gi * .07) : 0, pose: Object.assign(pose(pi, u, 12.45, LIE, open ? 0 : DOWN, 0, 1, id), { ry: pi * 90 * DEG }) }); u += stepW; n++; } u += gap; });
       } else if (pi === 0){
         // your rack, in the order you keep it; tiles not yet placed sit apart on the right
-        const ord = rackOrder(), slots = handSlots(ord.ids.length, ord.loose);
-        ord.ids.forEach((id, i) => want.set(id, { where: 'hand', i, pose: { x: slots[i].x, y: slots[i].y, z: slots[i].z, rx: UP - LEAN, ry: 0, rz: 0, sc: 1 } }));
+        let ord = rackOrder();
+        if (dealing && dealOrder) ord = { ids: dealOrder.filter(id => p.hand.some(x => x.id === id)), loose: 0 };
+        const slots = handSlots(ord.ids.length, ord.loose);
+        ord.ids.forEach((id, i) => {
+          const sl = slots[i], down = dealPhase === 2;
+          const ps = down ? { x: sl.x, y: sl.y - Math.cos(LEAN) * STAND + LIE + .02, z: sl.z + .45, rx: DOWN, ry: 0, rz: 0, sc: 1 } : { x: sl.x, y: sl.y, z: sl.z, rx: UP - LEAN, ry: 0, rz: 0, sc: 1 };
+          want.set(id, { where: 'hand', i, pose: ps, wait: dealPhase === 2 ? dwait(id) : dealPhase === 3 && !rm ? i * .03 : 0 });
+        });
       } else {
         const rest = p.hand.filter(x => x.id !== p.drawnId), order = drawn ? rest.concat([drawn]) : rest;
         const n = order.length, step2 = winner ? (pi % 2 ? 1.36 : 1.02) : 1.02;
         order.forEach((x, i) => {
           const u = (i - (n - 1) / 2) * step2 + (drawn && i === n - 1 && !winner ? .3 : 0);
-          want.set(x.id, { where: 'main', arc: true, hide: narrow && pi % 2 && !winner, pose: winner ? Object.assign(pose(pi, u, 12.45, LIE, 0, 0, 1, x.id), { ry: 0 }) : pose(pi, u, HAND_V, STAND, UP, 0, 1, x.id) });
+          want.set(x.id, { where: 'main', arc: true, wait: dealPhase === 2 ? dwait(x.id) : 0, snd: null, hide: narrow && pi % 2 && !winner, pose: winner ? Object.assign(pose(pi, u, 12.45, LIE, 0, 0, 1, x.id), { ry: 0 }) : pose(pi, u, HAND_V, STAND, UP, 0, 1, x.id) });
         });
       }
-      // melds on the band behind the discards, from the right-hand end
+      // sets on the band behind the discards, from the right-hand end. A new set: the claimed tile leads, the rest follow and lock on
       let cur = MB1;
-      for (const m of p.melds){
+      p.melds.forEach((m, mi) => {
+        const mk = pi + ':' + mi, mkey = m.type + m.tiles.length, isNew = !fresh && lastMeldKey.has(pi + ':n') && lastMeldKey.get(mk) !== mkey;
+        lastMeldKey.set(mk, mkey);
+        const lastI = m.tiles.length - 1;
         m.tiles.forEach((x, i) => {
-          const w = TW * MS, down = m.concealed && m.type === 'kong' && (i === 0 || i === 3);
-          want.set(x.id, { where: 'main', arc: true, snd: 'claim', pose: pose(pi, cur - w / 2, MV + (m.claimed === x.id ? .1 : 0), LIE * MS, down ? DOWN : 0, 0, MS, x.id) });
+          const w = TW * MS, down = m.concealed && m.type === 'kong' && (i === 0 || i === 3), lead = m.claimed === x.id;
+          const wt = !isNew || rm ? 0 : lead ? 0 : .14 + i * .045;
+          want.set(x.id, { where: 'main', arc: true, wait: wt, snd: isNew ? (i === lastI ? (m.type === 'chow' ? 'chow' : m.type === 'kong' ? 'kong' : 'pung') : null) : 'place', pose: pose(pi, cur - w / 2, MV + (lead ? .1 : 0), LIE * MS, down ? DOWN : 0, 0, MS, x.id) });
           cur -= w + .03;
         });
         cur -= .2;
-      }
+      });
+      lastMeldKey.set(pi + ':n', true);
       let fc = MB0; const fsc = .9;
-      for (const f of p.flowers){ want.set(f.id, { where: 'main', arc: true, snd: 'place', pose: pose(pi, fc + TW * fsc / 2, MV, LIE * fsc, 0, 0, fsc, f.id) }); fc += TW * fsc + .04; }
-      // discards: a grid of six per row, in the order thrown
+      for (const f of p.flowers){ want.set(f.id, { where: 'main', arc: true, snd: 'place', wait: dealPhase === 2 ? dwait(f.id) : 0, pose: pose(pi, fc + TW * fsc / 2, MV, LIE * fsc, 0, 0, fsc, f.id) }); fc += TW * fsc + .04; }
+      // discards: a grid of six per row, in the order thrown. A throw comes down short and slides the last bit
       p.discards.forEach((d, i) => {
         const sl = discardSlot(i, p.discards.length);
         const lifted = S.ui && S.ui.mode === 'claim' && S.lastDiscard && S.lastDiscard.id === d.id;
-        want.set(d.id, { where: 'main', arc: pi !== 0, snd: 'place', pose: pose(pi, sl.u, sl.v, LIE * sl.s + (lifted ? .34 : 0), 0, 0, sl.s, d.id) });
+        want.set(d.id, { where: 'main', arc: true, slide: true, snd: 'place', pose: pose(pi, sl.u, sl.v, LIE * sl.s + (lifted ? .34 : 0), 0, 0, sl.s, d.id) });
       });
     });
   }
-  // the lesson lays loose tiles straight onto the cloth
-  if (S.lay) for (const L of S.lay){ want.set(L.id, { where: 'main', arc: true, snd: L.snd === undefined ? 'place' : L.snd, pose: { x: L.x, y: LIE * (L.s || 1) + (L.lift || 0), z: L.z, rx: L.down ? DOWN : 0, ry: L.ry || 0, rz: 0, sc: L.s || 1 } }); }
+  // the lesson lays loose tiles straight onto the cloth; every other tile waits in the wall around the table
+  if (S.lay && dealPhase !== 'wash'){
+    for (const L of S.lay){ want.set(L.id, { where: 'main', arc: true, snd: L.snd === undefined ? 'place' : L.snd, pose: { x: L.x, y: LIE * (L.s || 1) + (L.lift || 0), z: L.z, rx: L.down ? DOWN : 0, ry: L.ry || 0, rz: 0, sc: L.s || 1 } }); }
+  }
+  if (lesson && dealPhase !== 'wash'){
+    let k = 0;
+    for (const id of STILL_ORDER){ if (want.has(id)) continue; const st = slotStack(k, 0, 1); want.set(id, { where: 'main', pose: wallPose(st.g, st.top ? 1 : 0, id), snd: null }); k++; }
+  }
   // apply
-  let dealRank = 0;
+  const rackMoves = [];
   for (const o of tiles){
-    const w = want.get(o.id);
+    let w = want.get(o.id);
     const h = hand.get(o.id);
-    if (!w){ o.g.visible = false; o.shadow.visible = false; o.active = false; o.tgt = null; o.where = 'none'; if (h){ h.g.visible = false; h.active = false; h.tgt = null; } continue; }
-    if (fresh && dealPhase === 1){
-      // the wall slides in from beyond the table edge, a stack at a time
-      const p = w.pose, k = S.slot.get(o.id), r = Math.hypot(p.x, p.z) || 1;
-      o.g.visible = true; o.where = 'main'; o.xferAt = 0; o.pendingHand = null;
-      if (h){ h.g.visible = false; h.active = false; h.tgt = null; }
-      const side = SIDE_ORDER[Math.floor(slotStack(k, S.dealer, S.handNo).g / 18)], [ox, oz] = seatXZ(side, 0, 30);
-      o.tgt = Object.assign({}, p, { x: p.x + ox, z: p.z + oz, y: p.y + .6 }); snap(o);
-      setTarget(o, p, { wait: (slotStack(k, S.dealer, S.handNo).g % 18) * .022 + Math.floor(slotStack(k, S.dealer, S.handNo).g / 18) * .03, snd: k % 2 ? 'deal' : null, keepPos: true });
-      continue;
+    if (!w){ // never expected in play; park it in the pile rather than make it vanish
+      w = { where: 'main', pose: washPose(o.id, 0), snd: null };
     }
     if (w.where === 'main'){
-      if (o.where === 'hand' && h && h.g.visible){ o.g.visible = true; fromHandToMain(h, o); h.g.visible = false; h.active = false; h.tgt = null; o.tgt = null; setTarget(o, w.pose, { keepPos: true, snd: w.snd || 'place' }); }
-      else {
-        const was = o.tgt; o.g.visible = !w.hide;
-        if (!was || moved(was, w.pose)) setTarget(o, w.pose, { hop: !!was && Math.cos(was.rx) < -.5 && Math.cos(w.pose.rx) > .5, arc: !!was && w.arc, snd: was ? (dealPhase === 2 ? 'deal' : w.snd) : null, keepPos: !!was, wait: dealPhase === 2 && was ? (S.slot.get(o.id) || 0) * .016 : 0 });
+      if (o.where === 'hand' && h && h.g.visible){
+        o.g.visible = true; fromHandToMain(h, o); h.g.visible = false; h.active = false; h.tgt = null; o.tgt = null; o.pendingHand = null;
+        setTarget(o, w.pose, { keepPos: true, arc: !rm, slide: w.slide && !rm, snd: w.snd || 'place', wait: w.wait || 0 });
+      } else {
+        const was = o.tgt, shown = o.g.visible;
+        o.g.visible = !w.hide; o.pendingHand = null;
+        if (!was || !shown){ o.tgt = Object.assign({}, w.pose); snap(o); } // only ever at the very start, under the dark
+        else if (moved(was, w.pose)){
+          const flipUp = Math.cos(was.rx) < -.5 && Math.cos(w.pose.rx) > .5;
+          setTarget(o, Object.assign({}, w.pose), { hop: flipUp && !w.arc, arc: w.arc && !rm, slide: w.slide && !rm, snd: w.snd, keepPos: true, wait: w.wait || 0 });
+        }
       }
-      o.where = 'main'; o.pendingHand = null; o.xferAt = 0;
-    } else { // into your hand
+      o.where = 'main';
+    } else { // into your rack
       const hh = handTile(o.id);
-      if (o.where === 'main' && o.g.visible){
-        o.pendingHand = w.pose;
-        if (dealPhase === 2){ o.xferAt = performance.now() + (S.slot.get(o.id) || 0) * 16; } else { o.xferAt = 0; doXfer(o); }
+      if (o.where === 'main' && o.g.visible && !o.pendingHand){
+        // lift off the table and travel to the near edge; the rack takes it over from there
+        o.pendingHand = w.pose; setTarget(o, exitPose(w.pose.x), { keepPos: true, arc: !rm, wait: w.wait || 0 }); o.exitBy = performance.now() + 2600;
       } else if (o.pendingHand){ o.pendingHand = w.pose; }
       else {
-        hh.g.visible = true;
-        const was = hh.tgt; if (!(drag && drag.moved && drag.id === o.id) && (!was || moved(was, w.pose, true))) setTarget(hh, Object.assign({}, w.pose), { keepPos: !!was });
+        if (!hh.g.visible){ hh.g.visible = true; hh.tgt = Object.assign({}, w.pose); snap(hh); }
+        const was = hh.tgt;
+        if (!(drag && drag.moved && drag.id === o.id) && (!was || moved(was, w.pose, true))){
+          const prevI = lastRackIdx.get(o.id);
+          rackMoves.push({ hh, pose: Object.assign({}, w.pose), i: w.i, prevI, wait: w.wait });
+        }
       }
+      lastRackIdx.set(o.id, w.i);
       o.where = 'hand';
+    }
+  }
+  // neighbours on the rack move as a ripple, outward from where the change happened
+  if (rackMoves.length){
+    const pivot = Math.min(...rackMoves.map(r => r.prevI == null ? r.i : Math.min(r.i, r.prevI)));
+    for (const r of rackMoves){
+      const wt = r.wait != null && r.wait > 0 ? r.wait : (rm || dealPhase === 2 ? 0 : Math.min(.3, Math.max(0, r.i - pivot) * .024));
+      setTarget(r.hh, r.pose, { keepPos: true, wait: wt, snd: dealPhase === 3 && r.i % 3 === 0 ? 'deal' : null });
     }
   }
   // highlights: last discard on the table; selection, hover and hint on the rack
@@ -768,11 +884,9 @@ function sync(){
   }
   lastDiscardId = ld;
   // plaques, the round marker, the dealer's disc and the lamps
-  const lesson = S.mode === 'lesson';
-  for (let s = 0; s < 4; s++){ plaques[s].g.visible = !lesson; if (!lesson) drawPlaque(s); }
-  marker.g.visible = !lesson; if (!lesson) drawMarker();
-  for (const l of seatLines) l.visible = !lesson;
-  { const [dx, dz] = seatXZ(S.dealer, S.dealer === 2 ? 5.1 : -5.1, 13.95); dealerDisc.visible = !lesson; dealerDisc.position.set(dx, .86, dz); }
+  fixT = lesson ? 0 : 1;
+  if (!lesson){ for (let s = 0; s < 4; s++) drawPlaque(s); drawMarker(); }
+  { const [dx, dz] = seatXZ(S.dealer, S.dealer === 2 ? 5.1 : -5.1, 13.95); discT.set(dx, .86, dz); if (!discSet || fixIn < .05){ dealerDisc.position.copy(discT); discSet = true; } }
   const myMove = S.turn === 0 && S.ui && (S.ui.mode === 'discard' || S.ui.mode === 'claim');
   warmT = myMove ? 1 : 0; turnIT = S.turn >= 0 && dealPhase === 0 ? 1 : 0;
   if (S.turn >= 0){ const [tx, tz] = seatXZ(S.turn, 0, 8.2); turnPosT.set(tx, 0, tz); }
@@ -816,28 +930,44 @@ function pick(ev){
   return null;
 }
 
-/* ---------- home: a still life on the table ---------- */
-function stillLife(){
-  const order = [...Array(144).keys()].sort((a, b) => rand(a + 7) - rand(b + 7));
+/* ---------- home: a still life on the table. Coming back from a hand, every tile travels home ---------- */
+let fixIn = 0, fixT = 0;
+function stillLife(first){
   const show = new Map();
-  const fan = [9, 22, 124, 128, 108, 72, 4]; // 1 Dot, ... chosen for colour
   const picks = [[36, -3.1, .4, -14], [72, -1.95, .1, -6], [124, -.8, 0, 0], [128, .37, .05, 6], [108, 1.55, .2, 12], [16, 2.75, .55, 18]];
   for (const [id, x, z, a] of picks) show.set(id, { x, y: LIE, z: z + 1, rx: 0, ry: -a * DEG, rz: 0, sc: 1 });
   let k = 0;
-  for (const id of order){ if (show.has(id)) continue; const st = slotStack(k, 0, 1); show.set(id, wallPose(st.g, st.top ? 1 : 0, id)); k++; if (k >= 136) break; }
+  for (const id of STILL_ORDER){ if (show.has(id)) continue; const st = slotStack(k, 0, 1); show.set(id, wallPose(st.g, st.top ? 1 : 0, id)); k++; }
+  const rm = reduced();
   for (const o of tiles){
-    const p = show.get(o.id); const h = hand.get(o.id); if (h){ h.g.visible = false; h.active = false; h.tgt = null; }
-    o.where = p ? 'main' : 'none'; o.xferAt = 0; o.pendingHand = null; o.rim.visible = false;
-    if (!p){ o.g.visible = false; o.shadow.visible = false; o.tgt = null; continue; }
-    o.g.visible = true; o.tgt = p; snap(o);
+    const p = Object.assign({}, show.get(o.id)), h = hand.get(o.id);
+    o.rim.visible = false;
+    if (!first && o.where === 'hand' && h && h.g.visible && handH > 0){ o.g.visible = true; fromHandToMain(h, o); o.tgt = null; o.shown = true; }
+    if (h){ h.g.visible = false; h.active = false; h.tgt = null; }
+    o.pendingHand = null; o.where = 'main';
+    if (first || !o.g.visible || !o.tgt && !o.shown){ o.g.visible = true; o.tgt = p; snap(o); }
+    else setTarget(o, p, { keepPos: true, arc: !rm, wait: rm ? 0 : rand(o.id * 1.7) * .4 });
+    o.shown = false;
   }
-  lastHandKey = null; lastDiscardId = null;
-  for (const P of plaques) P.g.visible = false; for (const l of seatLines) l.visible = false; if (marker){ marker.g.visible = false; dealerDisc.visible = false; } turnIT = 0; warmT = 0;
+  lastHandKey = null; lastDiscardId = null; lastRackIdx = new Map();
+  fixT = 0; turnIT = 0; warmT = 0; wake();
+}
+function fixtures(dt){ // plaques sink into the rail, the marker and the dealer's disc are lifted away
+  if (Math.abs(fixIn - fixT) < .002){ if (fixIn !== fixT){ fixIn = fixT; } else return false; }
+  else fixIn += (fixT - fixIn) * Math.min(1, dt * 6);
+  const e = fixIn;
+  plaques.forEach((P, s) => { P.g.visible = e > .01; P.g.position.y = .83 - (1 - e) * 1.5; });
+  if (marker){ marker.g.visible = e > .01; marker.g.scale.setScalar(.6 * Math.max(.001, e)); dealerDisc.visible = e > .01; dealerDisc.scale.setScalar(Math.max(.001, e)); }
+  for (const l of seatLines){ l.visible = e > .01; l.material.transparent = true; l.material.opacity = e; }
+  return true;
 }
 
 /* ---------- tables: felt, rail, tile backs and the lamp ---------- */
-function applyTheme(th){
-  theme = th; if (!ok) return;
+/* a new table: the lamp dips, the table changes in the dark, the lamp comes back */
+function applyTheme(th, now){
+  if (!ok){ theme = th; return; }
+  if (!now && !booting && theme && !reduced()){ dipCb = () => applyTheme(th, true); dipT = 1; wake(); return; }
+  theme = th;
   M.felt.color.set(th.felt); M.felt.sheenColor.set(th.sheen);
   M.walnut.map = th.wood === 'light' ? woodLight : woodDark; M.walnut.color.set(th.rail); M.walnut.needsUpdate = true;
   M.jade.color.set(cos.back != null ? cos.back : th.back);
@@ -1018,21 +1148,47 @@ async function init(host){
   return true;
 }
 function setMode(m){
+  const first = mode === 'none';
   mode = m;
   if (!ok) return;
-  if (m !== 'game'){ stillLife(); pushT = 0; push = 0; pushV = 0; }
+  if (m !== 'game'){ stillLife(first); pushT = 0; }
   resize();
 }
+/* waits inside the deal end early when the player taps: the tiles finish their trip quickly instead of jumping */
+let hurryWait = [];
+function pause(ms){
+  return new Promise((res, rej) => {
+    const my = token, done = () => { clearTimeout(t); hurryWait = hurryWait.filter(f => f !== done); my === token ? res() : rej(ABORT); };
+    const t = setTimeout(done, ms * speed()); hurryWait.push(done);
+  });
+}
+function hurry(){
+  if (!ok) return false;
+  const any = dealPhase !== 0 || hurryWait.length || tiles.some(o => o.wait > 0 || o.pendingHand) || [...hand.values()].some(h => h.wait > 0);
+  for (const o of tiles){ o.wait = 0; } for (const h of hand.values()) h.wait = 0;
+  hurryUntil = performance.now() + 450; [...hurryWait].forEach(f => f()); wake();
+  return any;
+}
+const dealing = () => dealPhase !== 0;
 async function deal(){
   if (!ok || mode !== 'game' || autotest) return;
   try {
-    dealPhase = 1; lastHandKey = null; render();
-    await sleep(760);
-    dealPhase = 2; render();
-    await sleep(1050);
-  } finally { dealPhase = 0; }
+    const rm = reduced(), out = tiles.some(o => o.g.visible);
+    // the last hand is swept into the middle and turned over: two strokes of the wash
+    if (out && !rm){ dealPhase = 'wash'; washTurn = (washTurn | 1) + 1; lastHandKey = null; render(); await pause(620); washTurn++; render(); await pause(460); }
+    // the wall goes up from the pile, stack by stack
+    dealPhase = 1; lastHandKey = null; render(); await pause(rm ? 300 : 1000);
+    // out in fours to each seat; yours lands face down in the order dealt
+    dealOrder = S.dealt ? S.players[0].hand.map(x => x.id).sort((a, b) => (S.dealt.get(a) || 0) - (S.dealt.get(b) || 0)) : null;
+    dealPhase = 2; render(); await pause(rm ? 300 : 17 * DEAL_GAP * 1000 + 520);
+    // your tiles stand up, then slide into order
+    dealPhase = 3; render(); await pause(rm ? 120 : 14 * 30 + 300);
+    dealPhase = 4; render(); await pause(rm ? 100 : 420);
+  } finally { dealPhase = 0; dealOrder = null; if (S && mode === 'game') render(); }
 }
+function warmUp(){ expo = .0; expoT = 1; expoK = 1.5; booting = false; if (ok){ renderer.toneMappingExposure = .02; wake(); } }
 function pushTo(pi, amt = 1){
+  if (reduced()) return;
   const [x, z] = seatXZ(pi, 0, 8); pushX = x * .45; pushZ = z * .45; pushT = amt;
   // on a tall phone the result slip covers the lower table: slide the table up instead of pushing in
   if (W < 720 && W < H){ pushX = 0; pushZ = pi === 0 ? 13 : pi === 2 ? 3 : 8; pushT = 1; pushZoom = 0; } else pushZoom = .14;
@@ -1055,5 +1211,5 @@ function whenLanded(id, max = 1400){
 function tileXY(id){ const o = tiles[id]; if (!o || !o.g.visible) return null; const q = o.tgt || o.pos; return screenXY(cam, q.x, q.y, q.z); }
 function tilePx(id){ const o = tiles[id]; if (!o || !o.g.visible) return 0; o.g.updateMatrixWorld(); const a = new T3.Vector3(-.5, .35, 0).applyMatrix4(o.g.matrixWorld).project(cam), b = new T3.Vector3(.5, .35, 0).applyMatrix4(o.g.matrixWorld).project(cam); return Math.hypot((a.x - b.x) * W / 2, (a.y - b.y) * H / 2); }
 function pointXY(x, z, y = 0){ return screenXY(cam, x, y, z); }
-return { init, sync, setMode, setTableView, get tableView(){ return tableView; }, setHelpers, whenLanded, tileXY, tilePx, pointXY, seatXZ, rackOrder, deal, pushTo, nudge, applyTheme, renderTileImages, handXY, seatXY, slow(ms = 520){ slowUntil = performance.now() + ms; wake(); }, IMG, get ok(){ return ok; }, setFocus(id){ focusId = id; updateHandFx(); }, fx: updateHandFx, invalidate, positionLabels, setCos(o){ cos = Object.assign({ back: null, lamp: null, tint: 0xffffff, light: false }, o); if (ok && theme) applyTheme(theme); }, thump(a = 1, lamp = false){ if (!ok) return; settleV -= a * 1.1; if (lamp) flick = 1; wake(); }, resize, setTier, get tier(){ return tier; }, get gpu(){ return window.TW_gpu; } };
+return { retype, resetTypes, hurry, dealing, warmUp, prof: { start(label, sync){ prof.on = true; prof.label = label; prof.sync = !!sync; wake(); }, label(l){ prof.label = l; }, stop(){ prof.on = false; return prof.frames.splice(0); } }, init, sync, setMode, setTableView, get tableView(){ return tableView; }, setHelpers, whenLanded, tileXY, tilePx, pointXY, seatXZ, rackOrder, deal, pushTo, nudge, applyTheme, renderTileImages, handXY, seatXY, slow(ms = 520){ slowUntil = performance.now() + ms; wake(); }, IMG, get ok(){ return ok; }, setFocus(id){ focusId = id; updateHandFx(); }, fx: updateHandFx, invalidate, positionLabels, setCos(o){ cos = Object.assign({ back: null, lamp: null, tint: 0xffffff, light: false }, o); if (ok && theme) applyTheme(theme); }, thump(a = 1, lamp = false){ if (!ok || reduced()) return; settleV -= a * 1.1; if (lamp) flick = 1; wake(); }, resize, setTier, get tier(){ return tier; }, get gpu(){ return window.TW_gpu; } };
 })();

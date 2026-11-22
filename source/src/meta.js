@@ -44,16 +44,16 @@ const SEAT = [
   { name:'Left',   lac:'#27447F', bright:'#7C9BE0', ink:'#F1E3C6' }
 ];
 const STYLES = [
-  { id:'quick',   name:'Fast and loose',    line:'Quick to call and careless with discards.' },
-  { id:'careful', name:'Careful defenders', line:'They stop feeding you once you look close.' },
-  { id:'flush',   name:'Big-hand hunters',  line:'They collect one suit and defend hard.' },
-  { id:'mixed',   name:'Three old hands',   line:'One defends, one hunts a big hand, one presses. All three read your discards.' }
+  { id:'quick',   name:'Easy',     line:'Quick to take tiles, careless about what they throw.' },
+  { id:'careful', name:'Careful',  line:'They stop throwing tiles you need once you get close.' },
+  { id:'flush',   name:'Tough',    line:'They go for big one-suit hands and play safe.' },
+  { id:'mixed',   name:'Mixed',    line:'One plays safe, one goes for big hands, one plays fast. All three watch what you throw.' }
 ];
 
 /* ranks */
 const RANKS = [
-  { name:'Novice', seal:'初', xp:0 }, { name:'Apprentice', seal:'徒', xp:150 }, { name:'Tile Reader', seal:'聽', xp:500 },
-  { name:'Table Regular', seal:'客', xp:1200 }, { name:'Master', seal:'師', xp:2500 }, { name:'Grandmaster', seal:'聖', xp:5000 }
+  { name:'Beginner', seal:'初', xp:0 }, { name:'Learner', seal:'徒', xp:150 }, { name:'Tile Reader', seal:'聽', xp:500 },
+  { name:'Regular', seal:'客', xp:1200 }, { name:'Sharp Player', seal:'師', xp:2500 }, { name:'Old Hand', seal:'聖', xp:5000 }
 ];
 function rankInfo(xp = profile.xp){
   let i = 0; while (i + 1 < RANKS.length && xp >= RANKS[i + 1].xp) i++;
@@ -76,25 +76,25 @@ if (!themeOpen(themeOf(profile.theme))) profile.theme = 'jade';
 
 /* the collection: every scoring pattern in the game */
 const COLLECTION = [
-  { id:'win',    name:'Mahjong',          fan:1,  re:/^Mahjong$/,            ex:[0,1,2,null,13,13,13,null,27,27], hint:'Any complete hand: four sets and a pair.' },
-  { id:'self',   name:'Self-drawn',       fan:1,  re:/^Self-drawn$/,         ex:[20,21,null,19],                  hint:'Draw the winning tile yourself. Everyone pays.' },
-  { id:'conc',   name:'Concealed hand',   fan:1,  re:/^Concealed hand$/,     ex:[3,4,5,null,15,15,15],            hint:'Win without claiming a single discard.' },
-  { id:'chows',  name:'All Chows',        fan:1,  re:/^All Chows$/,          ex:[0,1,2,null,12,13,14,null,22,23,24], hint:'Four runs and a pair. No sets of three.' },
-  { id:'pungs',  name:'All Pungs',        fan:3,  re:/^All Pungs$/,          ex:[4,4,4,null,16,16,16,null,28,28,28], hint:'Four sets of three and a pair. No runs.' },
-  { id:'red',    name:'Red Dragon',       fan:1,  re:/^Red Dragon pung/,     ex:[31,31,31],                       hint:'A Pung of Red Dragons.' },
-  { id:'green',  name:'Green Dragon',     fan:1,  re:/^Green Dragon pung/,   ex:[32,32,32],                       hint:'A Pung of Green Dragons.' },
-  { id:'white',  name:'White Dragon',     fan:1,  re:/^White Dragon pung/,   ex:[33,33,33],                       hint:'A Pung of White Dragons.' },
-  { id:'seat',   name:'Seat wind',        fan:1,  re:/^Seat wind pung/,      ex:[28,28,28],                       hint:'A Pung of the wind on your own plaque.' },
-  { id:'round',  name:'Round wind',       fan:1,  re:/^Round wind pung/,     ex:[27,27,27],                       hint:'A Pung of the wind shown on the round marker.' },
-  { id:'kong',   name:'Kong',             fan:1,  re:/Kongs?$/,              ex:[7,7,7,7],                        hint:'Four of a kind, declared.' },
-  { id:'flower', name:'Own flower',       fan:1,  re:/^Own flower/,          ex:[34],                             hint:'Draw the flower whose number matches your seat.' },
-  { id:'season', name:'Own season',       fan:1,  re:/^Own season/,          ex:[38],                             hint:'Draw the season whose number matches your seat.' },
-  { id:'half',   name:'Half Flush',       fan:3,  re:/^Half Flush$/,         ex:[9,10,11,null,14,14,14,null,29,29], hint:'One suit, plus winds or dragons.' },
+  { id:'win',    name:'Winning hand',     fan:1,  re:/^Mahjong$/,            ex:[0,1,2,null,13,13,13,null,27,27], hint:'Any finished hand: four sets and a pair.' },
+  { id:'self',   name:'Own draw',         fan:1,  re:/^Self-drawn$/,         ex:[20,21,null,19],                  hint:'Draw the winning tile yourself. Everyone pays.' },
+  { id:'conc',   name:'Hidden hand',      fan:1,  re:/^Concealed hand$/,     ex:[3,4,5,null,15,15,15],            hint:'Win without taking any tiles from others.' },
+  { id:'chows',  name:'All Chows',        fan:1,  re:/^All Chows$/,          ex:[0,1,2,null,12,13,14,null,22,23,24], hint:'Four runs and a pair.' },
+  { id:'pungs',  name:'All Pungs',        fan:3,  re:/^All Pungs$/,          ex:[4,4,4,null,16,16,16,null,28,28,28], hint:'Four Pungs and a pair. No runs.' },
+  { id:'red',    name:'Red Dragon',       fan:1,  re:/^Red Dragon pung/,     ex:[31,31,31],                       hint:'Three Red Dragons.' },
+  { id:'green',  name:'Green Dragon',     fan:1,  re:/^Green Dragon pung/,   ex:[32,32,32],                       hint:'Three Green Dragons.' },
+  { id:'white',  name:'White Dragon',     fan:1,  re:/^White Dragon pung/,   ex:[33,33,33],                       hint:'Three White Dragons.' },
+  { id:'seat',   name:'Seat wind',        fan:1,  re:/^Seat wind pung/,      ex:[28,28,28],                       hint:'Three of the wind on your name plate.' },
+  { id:'round',  name:'Round wind',       fan:1,  re:/^Round wind pung/,     ex:[27,27,27],                       hint:'Three of the wind in the middle of the table.' },
+  { id:'kong',   name:'Kong',             fan:1,  re:/Kongs?$/,              ex:[7,7,7,7],                        hint:'Four of the same tile.' },
+  { id:'flower', name:'Own flower',       fan:1,  re:/^Own flower/,          ex:[34],                             hint:'Draw the flower with your seat number.' },
+  { id:'season', name:'Own season',       fan:1,  re:/^Own season/,          ex:[38],                             hint:'Draw the season with your seat number.' },
+  { id:'half',   name:'Half Flush',       fan:3,  re:/^Half Flush$/,         ex:[9,10,11,null,14,14,14,null,29,29], hint:'One suit, plus Winds or Dragons.' },
   { id:'full',   name:'Full Flush',       fan:6,  re:/^Full Flush$/,         ex:[18,19,20,null,22,22,22,null,25,25], hint:'One suit and nothing else.' },
-  { id:'seven',  name:'Seven Pairs',      fan:4,  re:/^Seven Pairs$/,        ex:[1,1,null,9,9,null,20,20,null,33,33], hint:'Seven different pairs. No sets at all.' },
-  { id:'honors', name:'All Honors',       fan:10, re:/^All Honors$/,         ex:[27,27,27,null,31,31,31,null,32,32], hint:'Only winds and dragons.' },
+  { id:'seven',  name:'Seven Pairs',      fan:4,  re:/^Seven Pairs$/,        ex:[1,1,null,9,9,null,20,20,null,33,33], hint:'Seven different pairs, no sets.' },
+  { id:'honors', name:'Only Winds and Dragons', fan:10, re:/^All Honors$/,   ex:[27,27,27,null,31,31,31,null,32,32], hint:'No suit tiles at all.' },
   { id:'last',   name:'Last tile',        fan:1,  re:/^Last tile of the wall$/, ex:[26],                          hint:'Win on the very last tile of the wall.' },
-  { id:'kongwin',name:'Kong replacement', fan:1,  re:/^Win on a Kong replacement$/, ex:[5,5,5,5,null,17],         hint:'Declare a Kong and win on the tile you draw for it.' }
+  { id:'kongwin',name:'Kong replacement', fan:1,  re:/^Win on a Kong replacement$/, ex:[5,5,5,5,null,17],         hint:'Make a Kong, then win on the extra tile you draw.' }
 ];
 const stampCount = () => COLLECTION.filter(c => profile.stamps[c.id]).length;
 
@@ -102,17 +102,17 @@ const stampCount = () => COLLECTION.filter(c => profile.stamps[c.id]).length;
 const QUESTS = [
   { id:'win',    text:'Win a hand',                        test:e => e.kind === 'win' },
   { id:'self',   text:'Win on your own draw',              test:e => e.kind === 'win' && e.self },
-  { id:'conc',   text:'Win without claiming a tile',       test:e => e.kind === 'win' && e.concealed },
+  { id:'conc',   text:'Win without taking any tiles',      test:e => e.kind === 'win' && e.concealed },
   { id:'dragon', text:'Win with a Pung of Dragons',        test:e => e.kind === 'win' && e.names.some(n => /Dragon pung/.test(n)) },
-  { id:'fan3',   text:'Win a hand worth 3 fan or more',    test:e => e.kind === 'win' && e.fan >= 3 },
-  { id:'ron',    text:'Win on another player\'s discard',  test:e => e.kind === 'win' && !e.self },
-  { id:'pung',   text:'Claim a Pung',                      test:e => e.kind === 'claim' && e.type === 'pung' },
-  { id:'chow',   text:'Claim a Chow',                      test:e => e.kind === 'claim' && e.type === 'chow' },
-  { id:'kong',   text:'Declare a Kong',                    test:e => e.kind === 'kong' },
-  { id:'ready',  text:'Reach a ready hand',                test:e => e.kind === 'ready' },
+  { id:'fan3',   text:'Win a hand worth 3 faan or more',   test:e => e.kind === 'win' && e.fan >= 3 },
+  { id:'ron',    text:'Win on someone else\'s discard',     test:e => e.kind === 'win' && !e.self },
+  { id:'pung',   text:'Take a Pung',                       test:e => e.kind === 'claim' && e.type === 'pung' },
+  { id:'chow',   text:'Take a Chow',                       test:e => e.kind === 'claim' && e.type === 'chow' },
+  { id:'kong',   text:'Make a Kong',                       test:e => e.kind === 'kong' },
+  { id:'ready',  text:'Get one tile from winning',         test:e => e.kind === 'ready' },
   { id:'three',  text:'Play three hands',                  test:e => e.kind === 'hand' && e.count >= 3 },
-  { id:'daily',  text:'Play the daily hand',               test:e => e.kind === 'daily' },
-  { id:'top2',   text:'Finish a match first or second',    test:e => e.kind === 'match' && e.place <= 2 },
+  { id:'daily',  text:'Play the Daily Hand',               test:e => e.kind === 'daily' },
+  { id:'top2',   text:'Finish a game first or second',     test:e => e.kind === 'match' && e.place <= 2 },
   { id:'safe',   text:'Finish a hand without paying',      test:e => e.kind === 'hand' && e.paid === 0 }
 ];
 function todaysQuests(){
@@ -132,14 +132,14 @@ function questEvent(ev){
     news.push('Quest done: ' + q.text.toLowerCase() + '.');
   }
   const open = THEMES.filter(themeOpen);
-  if (open.length > before) news.push('New table: ' + open[open.length - 1].name + '. Find it in the Collection.');
+  if (open.length > before) news.push('New table open: ' + open[open.length - 1].name + '. Pick it in Collection, Tables.');
   return news;
 }
 function stampWin(names){
   const news = [], today = dayKey();
   for (const c of COLLECTION){
     if (profile.stamps[c.id] || !names.some(n => c.re.test(n))) continue;
-    profile.stamps[c.id] = today; news.push('Stamped in your collection: ' + c.name + '.');
+    profile.stamps[c.id] = today; news.push('New stamp in your Collection: ' + c.name + '.');
   }
   return news;
 }
@@ -155,28 +155,9 @@ function rnd(){
 
 /* one-sentence explanations */
 function explainTile(t){
-  if (t >= 34) return `${tName(t).replace(' (', ', ').replace(')', '')}: a bonus tile. It is set aside when drawn and scores 1 fan for the ${WIND_NAME[(t - 34) % 4]} seat.`;
-  if (t >= 31) return `${tName(t)}: an honor tile. A set of three dragons is always worth 1 fan.`;
-  if (t >= 27) return `${tName(t)}: an honor tile. No runs, only pairs and sets of three. It scores when it matches your seat or the round.`;
+  if (t >= 34) return `${tName(t).replace(' (', ', ').replace(')', '')}: a bonus tile. It goes to the side when drawn, and scores 1 faan for the ${WIND_NAME[(t - 34) % 4]} seat.`;
+  if (t >= 31) return `${tName(t)}. Three of them always score 1 faan.`;
+  if (t >= 27) return `${tName(t)}. Three of them score when they match your seat or the round.`;
   const n = numOf(t), a = Math.max(1, Math.min(7, n - 1));
-  return `${tName(t)}: a suit tile. It can sit in a run such as ${a}-${a + 1}-${a + 2}, or in a set of three.`;
+  return `${tName(t)}. It fits a run like ${a}-${a + 1}-${a + 2}, or three of a kind.`;
 }
-const EXPLAIN = [
-  [/^Mahjong/, 'One fan for completing a hand at all.'],
-  [/^Self-drawn/, 'You drew the winning tile yourself, so all three players pay.'],
-  [/^Concealed hand/, 'No discards were claimed, so the hand stayed hidden until the end.'],
-  [/^Seven Pairs/, 'Seven different pairs: the one winning shape with no sets.'],
-  [/^All Chows/, 'Every set is a run, like four straights and a pair.'],
-  [/^All Pungs/, 'Every set is three of a kind, like a hand made only of trips.'],
-  [/Dragon pung/, 'Three matching dragons always score.'],
-  [/^Seat wind/, 'Three of the wind on the winner\'s own plaque.'],
-  [/^Round wind/, 'Three of the wind on the round marker in the middle of the table.'],
-  [/Kong/, 'Four of a kind, like quads in poker. One fan each.'],
-  [/^Own flower|^Own season/, 'A bonus tile whose number matches the winner\'s seat.'],
-  [/^All Honors/, 'Only winds and dragons. The rarest hand in this game.'],
-  [/^Full Flush/, 'One suit and nothing else, like a flush with no exceptions.'],
-  [/^Half Flush/, 'One suit plus honors, a flush with a few face cards allowed.'],
-  [/^Last tile/, 'Won on the final tile of the wall.'],
-  [/^Win on a Kong/, 'Won on the extra tile drawn after declaring a Kong.']
-];
-const explainItem = name => (EXPLAIN.find(e => e[0].test(name)) || [0, ''])[1];
