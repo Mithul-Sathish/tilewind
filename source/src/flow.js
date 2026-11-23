@@ -120,7 +120,7 @@ async function runMatch(loop){
 
 async function playHand(st){
   let turn = st ? st.turn : S.dealer, needDraw = st ? st.needDraw : true, kongDraw = st ? st.kongDraw : false;
-  if (!st && !autotest && !profile.viewTip && S.mode === 'play' && !(profile.intro >= 1 && profile.intro <= 3)){ profile.viewTip = true; save(); say('Tip: Table shows every discard from above. Press and hold a tile to see what it is.', 5200); }
+  if (!st && !autotest && !profile.viewTip && S.mode === 'play' && !(profile.intro >= 1 && profile.intro <= 3)){ profile.viewTip = true; save(); say('Tip: hold a tile to see its name.', 4200); }
   if (!st && !autotest) await introIdea(); // hands two to four open with one new idea, before anyone moves
   while (true){
     const p = S.players[turn];
@@ -161,7 +161,7 @@ async function playHand(st){
     if (p.isHuman){ haptic(10); readyCheck(); }
     render();
     if (autotest) for (const q of S.players){ if (q.hand.length + 3 * q.melds.length !== 13) (window.TW_bad = window.TW_bad || []).push([q.name, q.hand.length, q.melds.length]); }
-    if (S.mode === 'tut' && p.isHuman && S.wasReady) await tutSay('You are one tile from winning. The tiles that would win are shown here, with how many of each are left.', 'ghosts');
+    if (S.mode === 'tut' && p.isHuman && S.wasReady) await tutSay('One tile from winning! These tiles would win. The number is how many are left.', 'ghosts');
     // nothing moves while the tile is in the air; then it is held still long enough to read
     await V.whenLanded(d.id);
     let mine = undefined;
@@ -207,7 +207,7 @@ async function resolveClaims(from, d, mine){
 
 /* ---------------- a table with friends: every person decides at once, on a clock ---------------- */
 async function netLocalTurn(so){
-  const stop = NET.localClock('turn', NET.turnMs(), () => { say('Time is up, so your newest tile was thrown for you.', 3200); if (S.ui && S.ui.resolve) S.ui.resolve(NET.defaultDiscard(0)); });
+  const stop = NET.localClock('turn', NET.turnMs(), () => { say('Time up. Tile thrown for you.', 3000); if (S.ui && S.ui.resolve) S.ui.resolve(NET.defaultDiscard(0)); });
   try { return await humanTurn(so); } finally { stop(); }
 }
 async function netLocalClaim(fn, ms){
@@ -253,8 +253,8 @@ function waitHuman(ui){
 }
 function humanTurn(so){
   const actions = [];
-  if (so.win) actions.push({ label:'Win the hand', kind:'win', key:'w', value:{ type:'win' } });
-  for (const t of so.kongs) actions.push({ label:'Make a Kong', kind:'kong', key:'k', tiles:[t,t,t,t], value:{ type:'kong', t } });
+  if (so.win) actions.push({ label:'Win!', kind:'win', key:'w', value:{ type:'win' } });
+  for (const t of so.kongs) actions.push({ label:'Kong', kind:'kong', key:'k', tiles:[t,t,t,t], value:{ type:'kong', t } });
   const ui = { mode:'discard', actions, coach: coachForTurn(so), moment: so.win && callLevel() === 'guided' };
   if (so.win && callLevel() !== 'expert') snd('chance');
   if (S.mode === 'tut') Object.assign(ui, tutTurn(so));
@@ -265,37 +265,36 @@ function humanTurn(so){
 const callLevel = () => S && S.mode === 'tut' ? 'guided' : S && S.mode === 'net' ? S.netCalls : (settings.calls || 'guided');
 function claimActions(o, d){
   const a = [];
-  if (o.ron) a.push({ label:'Win with it', kind:'win', key:'w', value:{ type:'ron' } });
-  if (o.kong) a.push({ label:'Take for Kong', kind:'kong', key:'k', value:{ type:'kong' } });
-  if (o.pung) a.push({ label:'Take for Pung', kind:'pung', key:'p', value:{ type:'pung' } });
-  if (o.chows.length) a.push({ label:'Take for Chow', kind:'chow', key:'c', value:{ type:'chow', start:o.chows[0] }, starts:o.chows.slice() });
+  if (o.ron) a.push({ label:'Win!', kind:'win', key:'w', value:{ type:'ron' } });
+  if (o.kong) a.push({ label:'Kong', kind:'kong', key:'k', value:{ type:'kong' } });
+  if (o.pung) a.push({ label:'Pung', kind:'pung', key:'p', value:{ type:'pung' } });
+  if (o.chows.length) a.push({ label:'Chow', kind:'chow', key:'c', value:{ type:'chow', start:o.chows[0] }, starts:o.chows.slice() });
   a.push({ label:'Pass', kind:'pass', key:' ', value:null });
   return a;
 }
 /* what taking it does and costs, in plain words, from the hand as it stands. Nothing here changes how a hand scores. */
 function callParts(kind, o, d, full){
   const me = S.players[0], costs = [], open = me.melds.every(m => m.concealed);
-  if (kind === 'ron') return { take: 'This tile finishes your hand.', costs: [], effect: '' };
-  const nm = tName(d.t), plural = d.t >= 27 ? nm + 's' : nm;
-  const take = kind === 'pung' ? `Makes three ${plural}.` : kind === 'kong' ? `Makes four ${plural}, and you draw an extra tile.` : `Makes a run with the ${nm}.`;
-  if (open) costs.push('you lose the Hidden hand bonus (1 faan)');
+  if (kind === 'ron') return { take: 'Wins the hand!', costs: [], effect: '' };
+  const take = kind === 'pung' ? 'Three of a kind.' : kind === 'kong' ? 'Four, plus a free draw.' : 'Makes a run.';
+  if (open) costs.push('no Hidden hand');
   const c = countsOf(me.hand), pairs = c.filter(v => v >= 2).length;
-  if (!me.melds.length && pairs >= 5) costs.push('you can no longer make Seven Pairs');
+  if (!me.melds.length && pairs >= 5) costs.push('no Seven Pairs');
   const ts = me.hand.concat(me.melds.flatMap(m => m.tiles)).map(x => x.t), su = [0,0,0]; ts.forEach(t => { if (t < 27) su[suitOf(t)]++; });
   const dom = su.indexOf(Math.max(...su)), other = su.reduce((a, v, i) => a + (i === dom ? 0 : v), 0);
-  if (d.t < 27 && suitOf(d.t) !== dom && su[dom] >= 8 && other <= 3) costs.push(`it breaks up your ${SUIT_NAME[dom]} hand`);
-  if ((kind === 'pung' || kind === 'kong') && !me.melds.some(m => m.type !== 'chow') && groupSort(me.hand).sets.filter(g => g.kind === 'chow').length >= 2 && !groupSort(me.hand).sets.some(g => g.kind === 'pung')) costs.push('you can no longer make All Chows');
+  if (d.t < 27 && suitOf(d.t) !== dom && su[dom] >= 8 && other <= 3) costs.push(`breaks your ${SUIT_NAME[dom]}`);
+  if ((kind === 'pung' || kind === 'kong') && !me.melds.some(m => m.type !== 'chow') && groupSort(me.hand).sets.filter(g => g.kind === 'chow').length >= 2 && !groupSort(me.hand).sets.some(g => g.kind === 'pung')) costs.push('no All Chows');
   let effect = '';
   if (full && kind !== 'kong'){
     const cur = shanten(c, me.melds.length), need = kind === 'chow' ? null : [d.t, d.t];
     let after = 99;
     if (kind === 'chow') for (const st of o.chows) after = Math.min(after, bestAfterClaim(0, [st, st + 1, st + 2].filter(x => x !== d.t), 1));
     else after = bestAfterClaim(0, need, 1);
-    effect = after <= 0 ? (cur === 0 ? 'You stay one tile from winning.' : 'You will be one tile from winning.') : after < cur ? `You go from ${cur + 1} to ${after + 1} tiles from winning.` : 'It does not get you closer to winning.';
+    effect = after <= 0 ? 'One away!' : after < cur ? `${after + 1} to go.` : 'No closer.';
   }
   return { take, costs, effect };
 }
-const costLine = c => c.costs.length ? 'But ' + c.costs.join(', and ') + '.' : '';
+const costLine = c => c.costs.length ? 'But ' + c.costs.join(', ') + '.' : '';
 function callCost(kind, o, d, full){
   const c = callParts(kind, o, d, full), name = { ron: 'Win', pung: 'Pung', kong: 'Kong', chow: 'Chow' }[kind];
   return [name + ': ' + c.take, c.effect, costLine(c)].filter(Boolean).join(' ');
@@ -307,8 +306,8 @@ function humanClaim(o, d, from){
   if (coachRec) actions.forEach(a => { a.rec = rec ? (a.value && a.value.type === rec.type) : (!o.ron && a.kind === 'pass'); });
   let msg, callout = null;
   if (lvl === 'guided'){
-    actions.forEach(a => { if (a.kind !== 'pass') a.why = callCost(a.value.type, o, d, true); else a.why = 'Pass: let it go and play moves on.'; });
-    msg = o.ron ? `${who}'s <em>${tName(d.t)}</em> finishes your hand.` : `${who} threw <em>${tName(d.t)}</em>.` + (coachRec ? (rec ? ' Taking it gets you closer.' : ' Better to pass.') : '');
+    actions.forEach(a => { if (a.kind !== 'pass') a.why = callCost(a.value.type, o, d, true); else a.why = 'Let it go.'; });
+    msg = o.ron ? `${who}'s <em>${tName(d.t)}</em> finishes your hand.` : `${who} threw <em>${tName(d.t)}</em>.` + (coachRec ? (rec ? ' Take it!' : ' Pass.') : '');
   } else {
     actions.forEach(a => { if (a.kind !== 'pass') a.why = costLine(callParts(a.value.type, o, d, false)); });
     msg = `${who} threw <em>${tName(d.t)}</em>.`;
@@ -316,7 +315,7 @@ function humanClaim(o, d, from){
   if (S.mode === 'tut'){
     actions = actions.filter(a => a.kind === 'pung'); actions.forEach(a => a.rec = true);
     msg = `${who} threw <em>${tName(d.t)}</em>.`;
-    callout = { at:'actions', text:`${who} threw a Red Dragon, and you have two. Tap Take for Pung to make three of a kind.` };
+    callout = { at:'actions', text:`You have two Red Dragons. Take this one for a Pung.` };
     if (!actions.length) return Promise.resolve(null);
   }
   if (lvl !== 'expert') snd('chance');
@@ -337,8 +336,8 @@ async function askClaim(ui, o, d){
 function pickChow(starts, d){
   const me = S.players[0], need = new Set(); starts.forEach(s => [s, s + 1, s + 2].forEach(t => { if (t !== d.t) need.add(t); }));
   return waitHuman({ mode:'chowpick', starts: starts.slice(), picked: [], tile: d.t, need,
-    actions: [{ label:'Go back', kind:'pass', key:'escape', value:null }],
-    coach: `Tap the two tiles to use with the <em>${tName(d.t)}</em>.` });
+    actions: [{ label:'Back', kind:'pass', key:'escape', value:null }],
+    coach: `Pick two tiles for the Chow.` });
 }
 function chowTap(id){
   const ui = S.ui; if (!ui || ui.mode !== 'chowpick') return false;
@@ -378,11 +377,11 @@ function aiRecommend(o, tile){
   return null;
 }
 function coachForTurn(so){
-  if (so.win) return 'You can win. Tap <em>Win the hand</em>.';
+  if (so.win) return 'You can win!';
   const cands = analyzeDiscards(0, { defend: S.diff >= 1 });
   S.ui_tip = cands[0] ? cands[0].t : null;
-  if (settings.coach < 2 || !cands[0]) return 'Tap a tile to throw it away.';
-  if (cands[0].sh === 0) return `Throw ${tileHTML(cands[0].t)} to be one tile from winning.`;
+  if (settings.coach < 2 || !cands[0]) return 'Your turn';
+  if (cands[0].sh === 0) return `Throw ${tileHTML(cands[0].t)} to be one away`;
   return `Try ${tileHTML(cands[0].t)}`;
 }
 function stepsToWin(){
@@ -406,8 +405,8 @@ function mistake(id){
   const me = S.players[0], x = me.hand.find(h => h.id === id); if (!x) return null;
   const c = analyzeDiscards(0, { defend: S.diff >= 1 }), best = c[0], mine = c.find(k => k.t === x.t);
   if (!best || !mine) return null;
-  if (best.sh === 0 && mine.sh > 0) return `Keep the ${tName(x.t)}: you need it to be one tile from winning.`;
-  if (mine.sh > best.sh) return `The ${tName(x.t)} helps a set you are building.`;
+  if (best.sh === 0 && mine.sh > 0) return `Keep that one. It's key.`;
+  if (mine.sh > best.sh) return `That one helps a set.`;
   return null;
 }
 function tryDiscard(id){
@@ -415,7 +414,7 @@ function tryDiscard(id){
   if (ui.only != null && ui.only !== id){ V.nudge(id); snd('nope'); say('Not that one yet.'); return false; }
   if (settings.coach === 1 && S.mode !== 'tut' && S.mode !== 'lesson' && S.warned !== id){
     const w = mistake(id);
-    if (w){ S.warned = id; S.selected = id; V.nudge(id); snd('nope'); say(w + ' Tap it again to throw it anyway.', 4600); return false; }
+    if (w){ S.warned = id; S.selected = id; V.nudge(id); snd('nope'); say(w + ' Tap again to throw.', 3600); return false; }
   }
   ui.resolve({ type:'discard', id }); return true;
 }
@@ -443,15 +442,15 @@ function tutSay(text, at){
 }
 async function tutIntro(){
   if (S.tutStep) return; S.tutStep = 1;
-  await tutSay('This is your hand: 13 tiles, plus the one you just drew. To win, you need four sets and a pair.', 'rack');
-  await tutSay('You already have two Chows (runs): 1-2-3 and 4-5-6.', 'rack');
+  await tutSay('Your hand. Win with four sets and a pair.', 'rack');
+  await tutSay('Two runs done already: 1-2-3 and 4-5-6.', 'rack');
 }
 function tutTurn(so){
   const me = S.players[0];
-  if (so.win) return { callout:{ at:'actions', text:'The 6 of Bamboo finishes 6-7-8. That makes four sets and a pair. Tap Win the hand.' } };
-  if (!me.melds.length){ const w = me.hand.find(x => x.t === 29); return { only: w.id, coach:'Your turn.', callout:{ at:'tile', id:w.id, text:'The West Wind matches nothing you have. Drag it up onto the table, or tap it twice, to throw it away.' } }; }
+  if (so.win) return { callout:{ at:'actions', text:'That 6 finishes your hand. Win it!' } };
+  if (!me.melds.length){ const w = me.hand.find(x => x.t === 29); return { only: w.id, coach:'Your turn.', callout:{ at:'tile', id:w.id, text:'This Wind matches nothing. Drag it up, or tap twice.' } }; }
   const n = me.hand.find(x => x.t === 30);
-  return { only: n.id, coach:'Your turn.', callout:{ at:'tile', id:n.id, text:'Your Pung stays face up on the table. Now throw away the North Wind. It matches nothing.' } };
+  return { only: n.id, coach:'Your turn.', callout:{ at:'tile', id:n.id, text:'Nice Pung. Now throw the lonely North Wind.' } };
 }
 
 /* ---------------- the end of a hand ---------------- */
@@ -567,25 +566,25 @@ async function finishHand(w){
 
 /* the names the scorer uses stay as they are; this is only what the player reads */
 const ITEM_TEXT = [
-  [/^Mahjong$/, () => 'Winning hand', '1 faan for finishing a hand.'],
-  [/^Self-drawn$/, () => 'Own draw', 'The winner drew the winning tile from the wall, so all three others pay.'],
-  [/^Concealed hand$/, () => 'Hidden hand', 'No tiles were taken from anyone else.'],
-  [/^Seven Pairs$/, () => 'Seven Pairs', 'Seven different pairs instead of four sets and a pair.'],
-  [/^All Chows$/, () => 'All Chows', 'Every set is a run.'],
-  [/^All Pungs$/, () => 'All Pungs', 'Every set is three of a kind.'],
-  [/Dragon pung$/, n => 'Pung of ' + n.split(' ')[0] + ' Dragons', 'Three of a kind in Dragons always scores.'],
-  [/^Seat wind pung/, n => 'Pung of ' + n.match(/\((\w+)\)/)[1] + ' Wind, the seat wind', 'The wind on the winner\'s name plate.'],
-  [/^Round wind pung/, n => 'Pung of ' + n.match(/\((\w+)\)/)[1] + ' Wind, the round wind', 'The wind in the middle of the table.'],
-  [/Kongs?$/, n => n, 'Four of a kind. 1 faan for each.'],
-  [/^Own (flower|season): /, n => n, 'A bonus tile with the winner\'s seat number.'],
-  [/^All Honors$/, () => 'Only Winds and Dragons', 'No suit tiles at all.'],
-  [/^Full Flush$/, () => 'Full Flush', 'Every tile is from one suit.'],
-  [/^Half Flush$/, () => 'Half Flush', 'One suit, plus Winds or Dragons.'],
-  [/^Last tile of the wall$/, () => 'Last tile', 'Won on the very last tile of the wall.'],
-  [/^Win on a Kong replacement$/, () => 'Kong replacement', 'Won on the extra tile drawn after a Kong.']
+  [/^Mahjong$/, () => 'Winning hand', 'Any win'],
+  [/^Self-drawn$/, () => 'Own draw', 'Drew it yourself'],
+  [/^Concealed hand$/, () => 'Hidden hand', 'Nothing grabbed'],
+  [/^Seven Pairs$/, () => 'Seven Pairs', 'Seven different pairs'],
+  [/^All Chows$/, () => 'All Chows', 'Runs only'],
+  [/^All Pungs$/, () => 'All Pungs', 'Three-of-a-kinds only'],
+  [/Dragon pung$/, n => 'Pung of ' + n.split(' ')[0] + ' Dragons', 'Dragons always score'],
+  [/^Seat wind pung/, n => 'Pung of ' + n.match(/\((\w+)\)/)[1] + ' Wind', 'Your seat wind'],
+  [/^Round wind pung/, n => 'Pung of ' + n.match(/\((\w+)\)/)[1] + ' Wind', 'The round wind'],
+  [/Kongs?$/, n => n, '1 faan each'],
+  [/^Own (flower|season): /, n => n, 'Matches the seat'],
+  [/^All Honors$/, () => 'Only Winds and Dragons', 'No suits at all'],
+  [/^Full Flush$/, () => 'Full Flush', 'One suit only'],
+  [/^Half Flush$/, () => 'Half Flush', 'One suit plus honors'],
+  [/^Last tile of the wall$/, () => 'Last tile', 'Very last tile'],
+  [/^Win on a Kong replacement$/, () => 'Kong replacement', 'Extra tile after a Kong']
 ];
 const itemText = name => { const e = ITEM_TEXT.find(e => e[0].test(name)); return e ? { label: e[1](name), why: e[2] } : { label: name, why: '' }; };
-const setWhyText = label => /Dragons/.test(label) ? 'Three of a kind in Dragons always scores.' : /Wind/.test(label) ? 'A wind that matches the seat or the round.' : /^Kong/.test(label) ? 'Four of a kind. 1 faan for each.' : '';
+const setWhyText = label => /Dragons/.test(label) ? 'Dragons always score' : /Wind/.test(label) ? 'Seat or round wind' : /^Kong/.test(label) ? '1 faan each' : '';
 function typeById(id){
   for (const p of S.players) for (const x of p.hand.concat(p.melds.flatMap(m => m.tiles), p.flowers)) if (x.id === id && x.t >= 0) return x.t;
   return null;
@@ -594,37 +593,37 @@ function resultSlip(w, parts, x){
   const win = w.pi >= 0, mine = w.pi === 0, name = win ? S.players[w.pi].name : '', net = !!x.net;
   const winT = () => { const h = win && w.ctx && w.ctx.winId != null ? typeById(w.ctx.winId) : null; return h == null ? 'tile' : tName(h); };
   let title, lead, fed = '';
-  if (!win){ title = 'No winner'; lead = 'The wall ran out before anyone finished. Nobody pays.'; }
-  else if (mine){ title = 'You win'; lead = w.selfDrawn ? `You drew the winning tile yourself, so all three pay you ${w.val}.` : `${S.players[w.ctx.from].name} threw your winning tile, so ${S.players[w.ctx.from].name} pays you double: ${w.val * 2}.`; }
+  if (!win){ title = 'No winner'; lead = 'The wall ran out. Nobody pays.'; }
+  else if (mine){ title = 'You win'; lead = w.selfDrawn ? `Own draw. Everyone pays ${w.val}.` : `${S.players[w.ctx.from].name} threw it and pays ${w.val * 2}.`; }
   else {
     title = name + ' wins';
-    lead = w.selfDrawn ? `${name} drew the winning tile. Everyone pays ${name} ${w.val}.` : w.ctx.from === 0 ? `Your ${winT()} finished ${name}'s hand, so you pay double: ${w.val * 2}.` : `${S.players[w.ctx.from].name} threw the winning tile and pays ${w.val * 2}. You pay nothing.`;
+    lead = w.selfDrawn ? `Own draw. Everyone pays ${w.val}.` : w.ctx.from === 0 ? `Your ${winT()} won it. You pay ${w.val * 2}.` : `${S.players[w.ctx.from].name} threw it and pays ${w.val * 2}.`;
     const fedTs = x.fedTs || S.fed.filter(f => f.by === w.pi).map(f => f.t);
     if (!x.fedTs && !w.selfDrawn && w.ctx.from === 0){ const t = typeById(w.ctx.winId); if (t != null) fedTs.push(t); }
-    fed = `<div class="fed"><span>${fedTs.length ? 'Your tiles in this hand:' : 'None of your discards went into this hand.'}</span>${fedTs.map(t => tileHTML(t)).join('')}</div>`;
+    fed = `<div class="fed"><span>${fedTs.length ? 'Your tiles:' : 'None of your tiles.'}</span>${fedTs.map(t => tileHTML(t)).join('')}</div>`;
   }
   // the hand itself, set by set, then each thing that scored, each with its reason in plain words
   const tilesOf = ids => ids.map(id => typeById(id)).filter(t => t != null).map(t => tileHTML(t)).join('');
-  const handRow = win ? `<div class="ln hand wait"><div class="htiles">${parts.groups.map(g => `<span class="hg">${tilesOf(g.ids)}</span>`).join('')}</div><small>${parts.groups.length === 7 ? 'Seven pairs.' : 'Four sets and a pair.'}</small></div>` : '';
+  const handRow = win ? `<div class="ln hand wait"><div class="htiles">${parts.groups.map(g => `<span class="hg">${tilesOf(g.ids)}</span>`).join('')}</div><small>${parts.groups.length === 7 ? 'Seven pairs' : '4 sets + pair'}</small></div>` : '';
   const line = (label, fan, why, tiles) => `<div class="ln wait"><div class="lt"><span>${label}</span>${tiles ? `<span class="lts">${tiles}</span>` : ''}${why ? `<small>${why}</small>` : ''}</div><b>${fan} faan</b></div>`;
   const scoring = win ? parts.groups.filter(g => g.fan).map(g => ({ fan: g.fan, html: line(g.label.replace(/, concealed$/, ''), g.fan, setWhyText(g.label), tilesOf(g.ids)) }))
     .concat(parts.rest.map(i => { const it = itemText(i.name); return { fan: i.fan, html: line(it.label, i.fan, it.why) }; })) : [];
   const dbl = win ? Math.min(w.res.fan, 8) - 1 : 0;
-  const tot = win ? `<div class="ln tot wait"><div class="lt"><span>Total: <i id="rFan">0</i> faan</span><small>${dbl ? `10 points, doubled ${dbl === 1 ? 'once' : dbl + ' times'}.` : 'A 1 faan hand is worth 10 points.'}</small></div><b><i id="rPts">0</i> points</b></div>` : '';
+  const tot = win ? `<div class="ln tot wait"><div class="lt"><span>Total: <i id="rFan">0</i> faan</span><small>${dbl ? `10 doubled ${dbl === 1 ? 'once' : dbl + ' times'}` : '1 faan = 10 points'}</small></div><b><i id="rPts">0</i> points</b></div>` : '';
   const pays = `<div class="pays">${S.players.map((pl, q) => `<div class="${w.pay[q] > 0 ? 'up' : w.pay[q] < 0 ? 'down' : ''}"><span><i style="background:${SEAT[q].lac}"></i>${pl.name}</span><b>${w.pay[q] > 0 ? '+' : ''}${w.pay[q] || '0'}</b><small>${pl.score}</small></div>`).join('')}</div>`;
   const ri = rankInfo();
   const rank = net ? '' : `<div class="rank"><span class="rseal">${ri.seal}</span><div><div class="rname">${ri.name}<small>${ri.next ? `${ri.into} of ${ri.need} to ${ri.next}` : 'Top rank'}</small></div><div class="bar"><i style="width:${Math.round(ri.frac * 100)}%"></i></div></div><span class="rgain">+${w.gain}</span></div>`;
   let stand = '';
-  if (x.last && S.totalHands > 1) stand = `<div class="stand"><div class="sth">${['', 'You came first', 'You came second', 'You came third', 'You came fourth'][x.place]}</div>${x.order.map((o, k) => { const i = o.i, sc = o.score != null ? o.score : o.p.score; return `<div class="${i === 0 ? 'me' : ''}"><span>${k + 1}</span><span><i style="background:${SEAT[i].lac}"></i>${S.players[i].name}</span><b>${sc}</b></div>`; }).join('')}</div>`;
+  if (x.last && S.totalHands > 1) stand = `<div class="stand"><div class="sth">${['', '1st place', '2nd place', '3rd place', '4th place'][x.place]}</div>${x.order.map((o, k) => { const i = o.i, sc = o.score != null ? o.score : o.p.score; return `<div class="${i === 0 ? 'me' : ''}"><span>${k + 1}</span><span><i style="background:${SEAT[i].lac}"></i>${S.players[i].name}</span><b>${sc}</b></div>`; }).join('')}</div>`;
   const news = (x.dailyLine ? [x.dailyLine] : []).concat(w.news).map(n => `<div>${n}</div>`).join('');
   let btns;
-  if (net) btns = `<span class="nwait" id="nWait"></span><button class="tbtn prime big" data-r="next">${x.last ? 'Back to the table' : 'Deal next hand'}</button>`;
-  else if (S.mode === 'tut' && !profile.kind) btns = `<div class="kinds"><div class="kq">How do you want to play from here?</div>${KINDS.map((k, i) => `<button class="tbtn kind ${i === 0 ? 'prime' : ''}" data-kind="${k.id}"><b>${k.name}</b><small>${k.line}</small></button>`).join('')}</div>`;
-  else if (S.mode === 'tut') btns = `<button class="tbtn prime big" data-r="again">Play a real hand</button>`;
-  else if (!x.last) btns = `<button class="tbtn prime big" data-r="next">Deal next hand</button>`;
-  else btns = `<button class="tbtn" data-r="home">Home</button><button class="tbtn prime big" data-r="again">${S.mode === 'daily' || S.mode === 'weekly' ? 'Play it again' : S.totalHands > 1 ? 'Play a new game' : 'Deal another hand'}</button>`;
-  if (S.mode === 'daily') btns = `<button class="tbtn" data-share>Make a result card</button>` + btns;
-  const tutLine = S.mode === 'tut' && mine ? '<div class="news"><div>That was a real hand, scored by the real rules.</div></div>' : '';
+  if (net) btns = `<span class="nwait" id="nWait"></span><button class="tbtn prime big" data-r="next">${x.last ? 'Back to the table' : 'Next hand'}</button>`;
+  else if ((S.mode === 'tut' || S.mode === 'play') && !profile.kind) btns = `<div class="kinds"><div class="kq">Your style?</div>${KINDS.map((k, i) => `<button class="tbtn kind ${i === 0 ? 'prime' : ''}" data-kind="${k.id}"><b>${k.name}</b><small>${k.line}</small></button>`).join('')}</div>`;
+  else if (S.mode === 'tut') btns = `<button class="tbtn prime big" data-r="again">Play for real</button>`;
+  else if (!x.last) btns = `<button class="tbtn prime big" data-r="next">Next hand</button>`;
+  else btns = `<button class="tbtn" data-r="home">Home</button><button class="tbtn prime big" data-r="again">${S.mode === 'daily' || S.mode === 'weekly' ? 'Again' : S.totalHands > 1 ? 'New game' : 'Another hand'}</button>`;
+  if (S.mode === 'daily') btns = `<button class="tbtn" data-share>Share card</button>` + btns;
+  const tutLine = S.mode === 'tut' && mine ? '<div class="news"><div>Real rules, real score.</div></div>' : '';
   const near = x.near != null ? x.near : nearMiss(w);
   const html = `<div class="slipwrap"><div class="slip paper ${mine ? 'mine' : ''}" role="dialog" aria-label="${title}">
     <div class="shead"><span class="seal" style="background:${win ? SEAT[w.pi].lac : '#5c4c37'}">${win ? '和' : '日'}</span><div><h2>${title}</h2><p class="lead">${lead}</p></div></div>
@@ -642,7 +641,7 @@ function resultSlip(w, parts, x){
     };
     const go = v => { alive = false; leave(root, 200); if (my !== token) rej(ABORT); else res(v); };
     slip.addEventListener('click', e => {
-      const kb = e.target.closest('[data-kind]'); if (kb){ setKind(kb.dataset.kind); go('again'); return; }
+      const kb = e.target.closest('[data-kind]'); if (kb){ setKind(kb.dataset.kind); go(S.mode === 'play' && !x.last ? 'next' : 'again'); return; }
       if (e.target.closest('[data-share]')){ shareCard(w); return; }
       const b = e.target.closest('[data-r]');
       if (b && net){ finish(); b.disabled = true; b.textContent = x.last ? 'Going back to the table' : 'Ready for the next hand'; NET.iAmNext(); return; }
@@ -694,7 +693,7 @@ function onReorder(id, ins){
   if (!S) return;
   const o = handOrder(), n = o.ids.length, placed = o.ids.slice(0, n - o.loose).filter(x => x !== id);
   placed.splice(Math.min(ins, placed.length), 0, id);
-  if (!S.manual && settings.autoSort !== 'off'){ settings.autoSort = 'off'; save(); say('Auto sort is off for now, so your order stays put. Sort is by the rack.', 4200); }
+  if (!S.manual && settings.autoSort !== 'off'){ settings.autoSort = 'off'; save(); say('Auto sort off. Your order stays.', 3200); }
   S.order = placed; snd('place'); saveResumeNow(); render();
   if (typeof lessonEvent === 'function') lessonEvent('reorder');
 }

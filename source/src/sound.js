@@ -1,10 +1,10 @@
 /* =========================================================
    SOUND. Effects: ceramic on felt, a band-passed noise click over a low
-   thump, never the same twice. Music: slow plucked notes on a five-note
-   scale over a soft drone, composed as it goes, so it has no loop point.
-   Silent until the first touch.
+   thump, never the same twice. Music: four short written pieces that rotate
+   (see below). Silent until the first touch; music and sound each have their
+   own switch, and everything pauses while the tab is hidden.
    ========================================================= */
-let actx = null, noiseBuf = null, armed = false, sfxBus = null, musBus = null, musTimer = null, padGain = null, tension = 0, musNext = 0, musDeg = 4;
+let actx = null, noiseBuf = null, armed = false, sfxBus = null, musBus = null, musTimer = null, tension = 0;
 function arm(){ if (armed) return; armed = true; music(); }
 document.addEventListener('pointerdown', arm, { once:true });
 document.addEventListener('keydown', arm, { once:true });
@@ -20,14 +20,14 @@ function audio(){
 }
 function setVolumes(){
   if (!actx) return;
-  sfxBus.gain.setTargetAtTime(settings.sfx, actx.currentTime, .03);
-  musBus.gain.setTargetAtTime(settings.music * .5, actx.currentTime, .2);
+  sfxBus.gain.setTargetAtTime(settings.sfxOn === false ? 0 : settings.sfx, actx.currentTime, .03);
+  musBus.gain.setTargetAtTime(settings.musicOn === false ? 0 : settings.music * .8, actx.currentTime, .25);
 }
 function haptic(p){ if (settings.haptics && !autotest && armed && navigator.vibrate){ try { navigator.vibrate(p); } catch(e){} } }
 const jit = (v, p) => v * (1 + (Math.random() * 2 - 1) * p);
 
 function snd(kind){
-  if (autotest || !armed || settings.sfx <= 0) return;
+  if (autotest || !armed || settings.sfx <= 0 || settings.sfxOn === false) return;
   try {
     const ac = audio(); if (ac.state === 'suspended') ac.resume();
     const now = ac.currentTime;
@@ -58,6 +58,7 @@ function snd(kind){
       }
     };
     if (kind === 'pick') clack(0, 3900, .2, 0, 0, .028, 3);
+    else if (kind === 'press'){ clack(0, 1700, .22, 260, .55, .035, 1.6); }
     else if (kind === 'draw'){ slide(0, .09, .1); clack(.085, 3500, .26, 210, .5, .03); }
     else if (kind === 'place') clack(0, 3000, .5, 180, .9);
     else if (kind === 'chow'){ clack(0, 3200, .42, 190, .6); clack(.07, 3600, .34, 0, 0); }
@@ -74,62 +75,117 @@ function snd(kind){
   } catch(e){}
 }
 
-/* a plucked string, near enough to a guzheng: bright attack, a quick bend down into pitch, long soft tail */
-function pluck(f, at, vol, dur, bus){
-  const ac = actx, o = ac.createOscillator(), o2 = ac.createOscillator(), lp = ac.createBiquadFilter(), g = ac.createGain();
-  o.type = 'sawtooth'; o2.type = 'triangle';
-  const f0 = jit(f, .0025);
-  o.frequency.setValueAtTime(f0 * 1.022, at); o.frequency.exponentialRampToValueAtTime(f0, at + .07);
-  o2.frequency.setValueAtTime(f0 * 2.003, at);
-  lp.type = 'lowpass'; lp.Q.value = 1.2; lp.frequency.setValueAtTime(Math.min(9000, f0 * 9), at); lp.frequency.exponentialRampToValueAtTime(f0 * 1.6, at + .5);
-  g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(vol, at + .006); g.gain.exponentialRampToValueAtTime(vol * .32, at + .22); g.gain.exponentialRampToValueAtTime(.0004, at + dur);
-  const g2 = ac.createGain(); g2.gain.value = .25;
-  o.connect(lp); o2.connect(g2).connect(lp); lp.connect(g).connect(bus);
-  o.start(at); o2.start(at); o.stop(at + dur + .05); o2.stop(at + dur + .05);
+/* the win and lose figures use the same soft harp as the music */
+function pluck(f, at, vol, dur, bus){ voice(actx, bus, 'harp', f, at, Math.max(.3, dur * .45), vol); }
+/* ---------------- music ----------------
+   Four short pieces with real tunes, written out note by note, that take turns in a shuffled order. Each time a piece comes
+   round again it is dressed differently (harp or felt piano on the tune, a different accompaniment, the tune up an octave on
+   the repeat), so half an hour does not wear thin. Soft instruments only, and well under the tile sounds. */
+const NOTE = n => { const m = /^([A-G])(#|b)?(\d)$/.exec(n); const st = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 }[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0); return 440 * Math.pow(2, (st + (+m[3] + 1) * 12 - 69) / 12); };
+const CHORD = c => { const m = /^([A-G](?:#|b)?)(m|7)?$/.exec(c), root = NOTE(m[1] + '3'), third = m[2] === 'm' ? 3 : 4; return [root, root * Math.pow(2, third / 12), root * Math.pow(2, 7 / 12)]; };
+const tune = s => s.trim().split(/\s+/).map(x => { const [n, d] = x.split(':'); return [n === 'r' ? null : NOTE(n), +d]; });
+const SONGS = [
+  { name: 'Lamp', bpm: 80, beats: 4, form: 'ABA',
+    A: { ch: 'D Bm G A D Bm Em A', m: tune('F#5:1 E5:.5 D5:.5 A4:2  B4:1 D5:1 F#5:1.5 E5:.5  D5:1.5 B4:.5 G4:1 B4:1  A4:3 r:1  F#5:1 A5:1 B5:.5 A5:.5 F#5:1  E5:1 F#5:.5 E5:.5 D5:2  E5:1 G5:1 F#5:1 E5:1  A4:1 C#5:1 E5:2') },
+    B: { ch: 'G A F#m Bm G A D D', m: tune('D5:1 B4:1 G4:1 B4:1  C#5:1 E5:1 A5:2  F#5:1.5 E5:.5 C#5:1 A4:1  B4:2 D5:1 F#5:1  G5:1.5 F#5:.5 E5:1 D5:1  E5:1 F#5:.5 E5:.5 C#5:1 A4:1  D5:1 F#5:1 A5:1 F#5:1  D5:3 r:1') } },
+  { name: 'Rain', bpm: 70, beats: 4, form: 'ABA',
+    A: { ch: 'Am F C G Am F G Am', m: tune('E5:1.5 D5:.5 C5:1 A4:1  C5:2 D5:1 E5:1  G5:1.5 E5:.5 D5:1 C5:1  D5:3 r:1  E5:1 A5:1 G5:1 E5:1  F5:1.5 E5:.5 D5:1 C5:1  D5:1 E5:.5 D5:.5 B4:2  A4:3 r:1') },
+    B: { ch: 'F G Em Am Dm Em F E', m: tune('A4:1 C5:1 F5:2  D5:1 G5:1.5 F5:.5 D5:1  E5:1.5 G5:.5 B5:1 G5:1  A5:2 E5:1 C5:1  D5:1 F5:1 A5:1.5 G5:.5  E5:1 G5:1 B4:2  C5:1 A4:1 F5:1 E5:1  E5:2 G#4:2') } },
+  { name: 'Tea', bpm: 96, beats: 3, form: 'AABA', waltz: true,
+    A: { ch: 'F Dm Bb C F Am Bb C', m: tune('C5:2 A4:1  D5:1.5 E5:.5 F5:1  D5:2 Bb4:1  C5:3  A5:2 G5:.5 F5:.5  E5:1 C5:1 A4:1  D5:1 F5:1 G5:1  E5:2 r:1'), end: tune('F5:3') },
+    B: { ch: 'Bb F Gm C Dm Am Bb C', m: tune('F5:1 D5:1 Bb4:1  C5:1 F5:1 A5:1  Bb5:2 A5:.5 G5:.5  E5:3  D5:1 F5:1 A5:1  G5:1.5 E5:.5 C5:1  D5:1 E5:1 F5:1  G5:2 E5:1') } },
+  { name: 'Rail', bpm: 88, beats: 4, form: 'ABA',
+    A: { ch: 'G Em C D G Em Am D', m: tune('B4:.5 D5:.5 G5:1 A5:.5 G5:.5 E5:1  D5:1 E5:.5 D5:.5 B4:2  E5:1 G5:1 A5:1 G5:.5 E5:.5  D5:3 r:1  G5:.5 A5:.5 B5:1 A5:1 G5:1  E5:1 G5:.5 E5:.5 D5:2  C5:1 E5:1 A5:1 G5:.5 E5:.5  D5:2 F#5:1 A5:1') },
+    B: { ch: 'C D Bm Em C D G G', m: tune('G5:1.5 E5:.5 C5:1 E5:1  F#5:1.5 D5:.5 A4:1 D5:1  B4:1 D5:1 F#5:1 B5:1  G5:2 E5:2  E5:1 G5:1 C6:1 B5:.5 A5:.5  A5:1 F#5:1 D5:1 E5:.5 F#5:.5  G5:1 D5:1 B4:1 D5:1  G5:3 r:1') } }
+];
+/* the instruments: all soft, nothing buzzy */
+function voice(ac, bus, kind, f, t, dur, vel){
+  if (!f) return;
+  const g = ac.createGain(); g.connect(bus);
+  if (kind === 'harp'){ // a plucked string: triangle and a quiet octave, the brightness falling away fast
+    const o = ac.createOscillator(), o2 = ac.createOscillator(), lp = ac.createBiquadFilter(), g2 = ac.createGain();
+    o.type = 'triangle'; o.frequency.value = f; o2.type = 'sine'; o2.frequency.value = f * 2.002; g2.gain.value = .22;
+    lp.type = 'lowpass'; lp.Q.value = .4; lp.frequency.setValueAtTime(Math.min(6000, f * 5), t); lp.frequency.exponentialRampToValueAtTime(Math.max(300, f * 1.4), t + .6);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .005); g.gain.exponentialRampToValueAtTime(vel * .35, t + .25); g.gain.exponentialRampToValueAtTime(.0003, t + Math.max(1.4, dur + 1.1));
+    o.connect(lp); o2.connect(g2).connect(lp); lp.connect(g);
+    const end = t + Math.max(1.5, dur + 1.2); o.start(t); o2.start(t); o.stop(end); o2.stop(end);
+  } else if (kind === 'piano'){ // a felt piano: sine partials that fade at different speeds
+    for (const [m, v, d] of [[1, 1, 1], [2, .32, .45], [3, .1, .25], [4.01, .04, .15]]){
+      const o = ac.createOscillator(), og = ac.createGain(); o.type = 'sine'; o.frequency.value = f * m;
+      const L = Math.max(.9, dur * 1.2 + .7) * d;
+      og.gain.setValueAtTime(0, t); og.gain.linearRampToValueAtTime(vel * v, t + .009); og.gain.exponentialRampToValueAtTime(.0003, t + L);
+      o.connect(og).connect(g); o.start(t); o.stop(t + L + .05);
+    }
+    g.gain.value = 1;
+  } else if (kind === 'pad'){ // two soft triangles a hair apart, behind a low filter, swelling in and out
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = .3; lp.connect(g);
+    for (const d of [-4, 4]){ const o = ac.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = d; o.connect(lp); o.start(t); o.stop(t + dur + 1.8); }
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + Math.min(1.2, dur * .4)); g.gain.setValueAtTime(vel, t + dur); g.gain.linearRampToValueAtTime(0, t + dur + 1.6);
+  } else if (kind === 'bass'){
+    const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .02); g.gain.exponentialRampToValueAtTime(vel * .5, t + .4); g.gain.exponentialRampToValueAtTime(.0003, t + Math.max(.8, dur + .4));
+    o.connect(g); o.start(t); o.stop(t + Math.max(.9, dur + .5));
+  }
 }
-const SCALE = [146.83, 164.81, 185, 220, 246.94]; // D E F# A B
-const noteAt = d => SCALE[((d % 5) + 5) % 5] * Math.pow(2, Math.floor(d / 5));
+/* the player: lays out one piece at a time, a little ahead of the clock */
+function MusicPlayer(ac, bus, rand = Math.random){
+  const P = { t: ac.currentTime + .4, queue: [], last: -1, plays: [0, 0, 0, 0], tension: 0, accBus: ac.createGain(), melBus: ac.createGain() };
+  P.accBus.connect(bus); P.melBus.connect(bus);
+  const hz = (v, j) => v * (1 + (rand() * 2 - 1) * j);
+  P.next = () => {
+    if (!P.queue.length){ const o = [0, 1, 2, 3]; for (let i = 3; i > 0; i--){ const j = Math.floor(rand() * (i + 1)); [o[i], o[j]] = [o[j], o[i]]; } if (o[0] === P.last) o.push(o.shift()); P.queue = o; }
+    const k = P.queue.shift(); P.last = k; return k;
+  };
+  P.lay = () => { // write one whole piece into the timeline, starting at P.t; returns its end
+    const k = P.next(), song = SONGS[k], n = P.plays[k]++, beat = 60 / song.bpm, bar = beat * song.beats;
+    const mel = n % 2 ? 'piano' : 'harp', acc = song.waltz ? (n % 2 ? 'harp' : 'piano') : ['arp', 'pad', 'arp2'][n % 3];
+    let t = P.t;
+    const parts = []; let seenA = 0; for (const ch of song.form){ const sec = song[ch]; parts.push({ sec, end: ch === 'A' && sec.end && seenA > 0 ? sec.end : null, up: ch === 'A' && seenA > 0 && parts.length >= 2 && n % 3 === 1 }); if (ch === 'A') seenA++; }
+    for (const p of parts){
+      const chords = p.sec.ch.split(' ');
+      // the tune
+      let bt = 0; const notes = p.end ? p.sec.m.slice(0, p.sec.m.length - 2).concat(p.end) : p.sec.m;
+      for (const [f, d] of notes){ if (f) voice(ac, P.melBus, mel, (p.up ? f * 2 : f) / (mel === 'piano' && p.up ? 2 : 1), t + bt * beat + (rand() - .5) * .016, d * beat, hz(mel === 'harp' ? .12 : .1, .1)); bt += d; }
+      // underneath
+      chords.forEach((c, i) => {
+        const tb = t + i * bar, tones = CHORD(c);
+        voice(ac, P.accBus, 'bass', tones[0] / 2, tb, beat * (song.beats - .5), hz(.075, .08));
+        if (song.waltz){ for (const b of [1, 2]) tones.forEach(x => voice(ac, P.accBus, acc, x * 2, tb + b * beat + (rand() - .5) * .01, beat * .8, hz(.022, .1))); }
+        else if (acc === 'pad'){ tones.forEach(x => voice(ac, P.accBus, 'pad', x * 2, tb, bar - .1, .018)); }
+        else { const seq = acc === 'arp' ? [0, 1, 2, 1, 0, 1, 2, 1] : [0, 2, 1, 2, 0, 2, 1, 2]; seq.forEach((q, j) => voice(ac, P.accBus, 'harp', tones[q] * (j % 4 === 2 ? 4 : 2), tb + j * beat / 2 + (rand() - .5) * .012, beat / 2, hz(j % 2 ? .028 : .038, .12))); }
+      });
+      t += chords.length * bar;
+    }
+    // a breath between pieces: one held chord, then quiet
+    const home = CHORD(SONGS[k].A.ch.split(' ')[0]);
+    home.forEach(x => voice(ac, P.accBus, 'pad', x * 2, t, 3.2, .016));
+    P.t = t + 4.5 + rand() * 2;
+    return P.t;
+  };
+  P.fill = horizon => { while (P.t < horizon) P.lay(); };
+  P.setTension = v => { P.tension = v; P.accBus.gain.setTargetAtTime(v > .5 ? .45 : 1, ac.currentTime, 1.5); };
+  return P;
+}
 function music(){
   if (musTimer || autotest || !armed) return;
   try {
-    const ac = audio();
-    // the drone: two soft fifths that breathe
-    padGain = ac.createGain(); padGain.gain.value = 0; padGain.connect(musBus);
-    for (const [f, v] of [[73.42, .5], [110, .35], [146.83, .2]]){
-      const o = ac.createOscillator(), g = ac.createGain(), l = ac.createOscillator(), lg = ac.createGain();
-      o.type = 'sine'; o.frequency.value = f; g.gain.value = v * .16;
-      l.frequency.value = jit(.07, .4); lg.gain.value = v * .06; l.connect(lg).connect(g.gain);
-      o.connect(g).connect(padGain); o.start(); l.start();
-    }
-    padGain.gain.setTargetAtTime(1, ac.currentTime, 2.5);
-    musNext = ac.currentTime + 1.2;
+    const ac = audio(); const pl = MusicPlayer(ac, musBus); window.TW_music = pl;
     musTimer = setInterval(() => {
-      if (ac.state !== 'running' || settings.music <= 0) { musNext = ac.currentTime + .5; return; }
-      while (musNext < ac.currentTime + .6){
-        const calm = 1 - tension;
-        // a phrase: one to four notes walking the scale, then a rest. Tension leaves only single high notes.
-        const n = tension > .5 ? 1 : 1 + Math.floor(Math.random() * 3.6);
-        let t = musNext;
-        for (let i = 0; i < n; i++){
-          musDeg += [-2, -1, -1, 1, 1, 2, 3, -3][Math.floor(Math.random() * 8)];
-          musDeg = Math.max(tension > .5 ? 8 : 2, Math.min(13, musDeg));
-          pluck(noteAt(musDeg), t, jit(.11, .25) * (.6 + .4 * calm), jit(3.2, .2), musBus);
-          if (calm > .5 && Math.random() < .22) pluck(noteAt(musDeg - 5), t + .02, .07, 3.6, musBus);
-          t += jit([.42, .62, .84, 1.25][Math.floor(Math.random() * 4)], .08);
-        }
-        if (calm > .5 && Math.random() < .3) pluck(noteAt(Math.floor(Math.random() * 3)) / 2, t, .1, 4.5, musBus);
-        musNext = t + jit(tension > .5 ? 5.5 : 2.4, .45);
-      }
-    }, 200);
+      if (ac.state !== 'running') return;
+      if (!settings.musicOn || settings.music <= 0){ if (pl.t < ac.currentTime) pl.t = ac.currentTime + .5; return; }
+      if (pl.t < ac.currentTime - .5) pl.t = ac.currentTime + .4; // after a pause, start a fresh piece rather than cramming the old one in
+      pl.fill(ac.currentTime + 1.5);
+    }, 400);
+    tensionNow = () => pl;
   } catch(e){}
 }
+let tensionNow = () => null;
 /* a ready hand: three notes climbing out of the quiet */
 function lift(){
-  if (!actx || !armed || autotest || settings.music <= 0) return;
-  try { const t = actx.currentTime + .08; [7, 9, 11].forEach((d, i) => pluck(noteAt(d), t + i * .17, .13 - i * .01, 2.8, musBus)); } catch(e){}
+  if (!actx || !armed || autotest || !settings.musicOn || settings.music <= 0) return;
+  try { const t = actx.currentTime + .08; ['A5', 'B5', 'D6'].forEach((n, i) => voice(actx, musBus, 'harp', NOTE(n), t + i * .17, .4, .1 - i * .01)); } catch(e){}
 }
 function setTension(v){
-  tension = v;
-  if (padGain && actx) padGain.gain.setTargetAtTime(v > .5 ? .25 : 1, actx.currentTime, 1.2);
+  tension = v; const p = tensionNow(); if (p) p.setTension(v);
 }
 document.addEventListener('visibilitychange', () => { if (actx){ if (document.hidden) actx.suspend(); else if (armed) actx.resume(); } });

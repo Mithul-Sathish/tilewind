@@ -319,8 +319,8 @@ function drawPlaque(s){
   g.fillStyle = a.ink; g.textBaseline = 'middle';
   g.font = "118px TWbrush"; g.textAlign = 'center'; g.fillText(WIND_HAN[w], 92, 84);
   g.globalAlpha = .5; g.fillRect(170, 30, 3, 100); g.globalAlpha = 1;
-  g.font = "600 84px TWserif"; g.textAlign = 'left'; g.fillText(p.name, 200, 84, 520);
-  g.font = "600 118px TWserif"; g.textAlign = 'right'; g.fillText(String(P.shown), 990, 82);
+  g.font = "600 86px TWdisplay"; g.textAlign = 'left'; g.fillText(s === 0 ? 'You' : p.name, 200, 86, 470);
+  g.font = "600 124px TWdisplay"; g.textAlign = 'right'; g.fillText(String(P.shown), 994, 88);
   P.tex.needsUpdate = true; P.mat.emissiveIntensity = on ? .2 : 0;
 }
 function drawMarker(force){
@@ -332,8 +332,9 @@ function drawMarker(force){
   g.fillStyle = '#E9DFC8'; g.fillRect(0, 0, 512, 512);
   g.strokeStyle = '#B3261E'; g.lineWidth = 5; g.beginPath(); g.arc(256, 256, 232, 0, 7); g.stroke();
   g.fillStyle = '#B3261E'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = "216px TWbrush"; g.fillText(WIND_HAN[S.roundWind], 256, 180);
-  g.fillStyle = '#2A2117'; g.font = "600 132px TWserif"; g.fillText(String(left), 256, 372);
-  g.font = "600 46px TWserif"; g.globalAlpha = .7; g.fillText('tiles left', 256, 452); g.globalAlpha = 1;
+  g.fillStyle = '#2A2117';
+  if (S.totalHands > 1){ g.font = "600 118px TWdisplay"; g.fillText((S.handNo + 1) + '/' + S.totalHands, 256, 380); g.font = "600 44px TWdisplay"; g.globalAlpha = .62; g.fillText('hand', 256, 458); g.globalAlpha = 1; }
+  else { g.font = "600 70px TWdisplay"; g.fillText(['East', 'South', 'West', 'North'][S.roundWind], 256, 392); }
   marker.tex.needsUpdate = true;
 }
 function buildRack(){
@@ -540,9 +541,34 @@ function fitCamera(snapNow = true){
   updateCam(); wake();
 }
 function setTableView(on){ on = !!on; if (on === tableView || mode !== 'game') return tableView; tableView = on; fitCamera(false); return on; }
+/* looking around: off by default. A tap on a seat's plaque (or keys 1 2 3) glides to that seat's discards; a drag on empty felt
+   turns the view within limits; the wheel or a pinch zooms within limits; a double tap, key 0 or My seat comes back. The rack is
+   drawn by its own camera, so no view can lose it, and the tilt never passes 52 degrees, so the view never goes under the table. */
+const LOOK0 = { yaw: 0, tilt: 0, zoom: 1, px: 0, pz: 0 };
+const look = Object.assign({}, LOOK0), lookT = Object.assign({}, LOOK0), lookV = { yaw: 0, tilt: 0, zoom: 0, px: 0, pz: 0 };
+let lookSeat = 0, orbit = null, lastTapAt = 0, lastTapXY = null;
+const clampLook = () => {
+  lookT.yaw = Math.max(-.7, Math.min(.7, lookT.yaw)); lookT.zoom = Math.max(.5, Math.min(1.12, lookT.zoom));
+  const base = ct.tilt; lookT.tilt = Math.max(-base + .5 * DEG, Math.min(52 * DEG - base, lookT.tilt));
+};
+function lookAtSeat(pi){
+  if (mode !== 'game' || !S) return;
+  if (pi === 0 || pi == null || pi === lookSeat){ lookHome(); return; }
+  const [x, z] = seatXZ(pi, 0, 5.4);
+  Object.assign(lookT, { yaw: 0, tilt: (narrow ? 2 : 10) * DEG - ct.tilt, zoom: narrow ? .74 : .6, px: x - ct.tx, pz: z - ct.tz });
+  if (narrow){ lookT.px *= .55; }
+  lookSeat = pi; clampLook(); wake(); lookChanged();
+}
+function lookHome(){ Object.assign(lookT, LOOK0); lookSeat = 0; wake(); lookChanged(); }
+const lookAway = () => Math.abs(lookT.yaw) > .02 || Math.abs(lookT.tilt) > .01 || Math.abs(lookT.zoom - 1) > .02 || Math.abs(lookT.px) + Math.abs(lookT.pz) > .05;
+function lookChanged(){ if (typeof onLook === 'function') onLook(lookAway(), lookSeat); }
 function updateCam(){
-  const R = cv.R * (1 - pushZoom * push);
-  placeCam(cam, R, cv.tx + pushX * push, cv.tz + pushZ * push + (mode === 'home' ? (W < H ? 6 : 2.4) : 0), par.x, par.z, cv.tilt);
+  const g = mode === 'game';
+  const R = cv.R * (1 - pushZoom * push) * (g ? look.zoom : 1), tilt = cv.tilt + (g ? look.tilt : 0), yaw = g ? look.yaw : 0;
+  const tx = cv.tx + pushX * push + (g ? look.px : 0), tz = cv.tz + pushZ * push + (mode === 'home' ? (W < H ? 6 : 2.4) : 0) + (g ? look.pz : 0);
+  const oz = R * Math.sin(tilt);
+  cam.position.set(tx + oz * Math.sin(yaw) + par.x, R * Math.cos(tilt), tz + oz * Math.cos(yaw) + par.z);
+  cam.lookAt(tx, 0, tz); cam.updateMatrixWorld();
 }
 function fitHand(){
   if (!handH){ return; }
@@ -606,6 +632,7 @@ function frame(now){
     for (const k of ['R', 'tilt', 'tx', 'tz']){ const a = w * w * (ct[k] - cv[k]) - 2 * w * cvV[k]; cvV[k] += a * dt; cv[k] += cvV[k] * dt; }
     busy = true;
   } else if (!(drag && drag.moved)){ Object.assign(cv, ct); cvV.R = cvV.tilt = cvV.tx = cvV.tz = 0; }
+  { let mv = false; const w = reduced() ? 16 : 7.5; for (const k in look){ const d = lookT[k] - look[k]; if (Math.abs(d) > .0004 || Math.abs(lookV[k]) > .0004){ if (orbit && (k === 'yaw' || k === 'tilt')){ look[k] = lookT[k]; lookV[k] = 0; } else { const a = w * w * d - 2 * w * lookV[k]; lookV[k] += a * dt; look[k] += lookV[k] * dt; } mv = true; } else { look[k] = lookT[k]; lookV[k] = 0; } } if (mv){ busy = true; labelsDirty = true; } }
   if (Math.abs(par.x - par.tx) > .002 || Math.abs(par.z - par.tz) > .002){ const k = Math.min(1, dt * 4); par.x += (par.tx - par.x) * k; par.z += (par.tz - par.z) * k; busy = true; }
   for (let s = 0; s < sub; s++){
     for (const o of tiles){ if (o.pendingHand && readyToXfer(o, now)) doXfer(o); if (step(o, h)) busy = true; }
@@ -1032,7 +1059,7 @@ function dragEnd(ev){
   drag = null; h.tgt = null; setTarget(h, d.home, { keepPos: true }); if (S) render();
 }
 /* press and hold any tile to ask what it is; pinch or scroll the table for the view from above */
-let holdTimer = 0; const touches = new Map(); let pinch0 = 0, wheelAt = 0;
+let holdTimer = 0; const touches = new Map(); let pinch0 = 0, wheelAt = 0, pinchZ = 1;
 function cancelHold(){ if (holdTimer){ clearTimeout(holdTimer); holdTimer = 0; } }
 function holdHit(x, y){
   const ev = { clientX: x, clientY: y }, id = pick(ev);
@@ -1040,11 +1067,15 @@ function holdHit(x, y){
   const m = pickMain(ev); if (m && m.kind === 'tile' && m.faceUp) return Object.assign(m, { t: typeOf(m.id) });
   return m && m.kind === 'tile' ? Object.assign(m, { t: null }) : null;
 }
+/* the camera never turns from a press on or just above the rack: the line is the top of the highest rack tile, less a finger's margin */
+function rackTop(){ let top = H - handH - stripH; for (const id of hand.keys()){ const q = handXY(id); if (q) top = Math.min(top, q.y - 24); } return top; }
 function onDown(ev){
   touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
-  if (touches.size === 2){ cancelHold(); if (drag){ const h = hand.get(drag.id); if (h && drag.moved){ h.tgt = null; setTarget(h, drag.home, { keepPos: true }); } drag = null; sync(); } const [a, b] = [...touches.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); return; }
+  if (touches.size === 2){ cancelHold(); orbit = null; pinchZ = lookT.zoom; if (drag){ const h = hand.get(drag.id); if (h && drag.moved){ h.tgt = null; setTarget(h, drag.home, { keepPos: true }); } drag = null; sync(); } const [a, b] = [...touches.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); return; }
   cancelHold();
   const x0 = ev.clientX, y0 = ev.clientY;
+  orbit = null;
+  if (mode === 'game' && S && y0 < rackTop() && pick(ev) === null){ if (!pickMain(ev)){ orbit = { x0, y0, yaw0: lookT.yaw, tilt0: lookT.tilt, id: ev.pointerId, moved: false }; try { canvas.setPointerCapture(ev.pointerId); } catch(e){} } }
   holdTimer = setTimeout(() => {
     holdTimer = 0; if (touches.size > 1 || (drag && drag.moved)) return;
     const hit = holdHit(x0, y0); if (!hit) return;
@@ -1058,19 +1089,36 @@ function onMove(ev){
   if (touches.has(ev.pointerId)) touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
   if (touches.size === 2 && pinch0 > 0){
     const [a, b] = [...touches.values()], r = Math.hypot(a.x - b.x, a.y - b.y) / pinch0;
-    if (r > 1.18 || r < .85){ const on = r > 1; pinch0 = 0; if (on !== tableView && typeof onTableView === 'function') onTableView(on); }
+    if (mode === 'game' && S){ lookT.zoom = pinchZ / Math.max(.3, r); clampLook(); if (lookSeat === 0) lookSeat = -1; wake(); }
     return;
+  }
+  if (orbit && orbit.id === ev.pointerId){
+    const dx = ev.clientX - orbit.x0, dy = ev.clientY - orbit.y0;
+    if (!orbit.moved && Math.hypot(dx, dy) > 9){ orbit.moved = true; cancelHold(); canvas.style.cursor = 'grabbing'; }
+    if (orbit.moved){ const k = 1 / Math.max(320, Math.min(W, H)); lookT.yaw = orbit.yaw0 - dx * k * 1.6; lookT.tilt = orbit.tilt0 + dy * k * 1.1; clampLook(); lookSeat = -1; wake(); return; }
   }
   if (holdTimer){ const t = touches.get(ev.pointerId); if (t && drag && Math.hypot(ev.clientX - drag.x0, ev.clientY - drag.y0) > 9) cancelHold(); }
   if (dragMove(ev) && drag && drag.moved) return;
   if (ev.pointerType !== 'mouse') return;
   const id = pick(ev); if (id !== hoverId){ hoverId = id; canvas.style.cursor = id !== null && canArrange() ? (canThrow() ? 'pointer' : 'grab') : ''; updateHandFx(); }
 }
-function onUp(ev){ touches.delete(ev.pointerId); if (touches.size < 2) pinch0 = 0; cancelHold(); dragEnd(ev); }
+function onUp(ev){
+  touches.delete(ev.pointerId); if (touches.size < 2){ if (pinch0 > 0) lookChanged(); pinch0 = 0; } cancelHold();
+  if (orbit && orbit.id === ev.pointerId){
+    const o = orbit; orbit = null; canvas.style.cursor = '';
+    if (o.moved){ noClick = performance.now() + 250; lookChanged(); return; }
+    const now = ev.timeStamp || performance.now();
+    if (ev.type === 'pointerup' && now - lastTapAt < 400 && lastTapXY && Math.hypot(ev.clientX - lastTapXY.x, ev.clientY - lastTapXY.y) < 40){ lastTapAt = 0; if (lookAway()){ lookHome(); noClick = performance.now() + 250; } }
+    else { lastTapAt = now; lastTapXY = { x: ev.clientX, y: ev.clientY }; }
+  }
+  dragEnd(ev);
+}
 function onWheel(ev){
   if (mode !== 'game' || !S) return;
-  ev.preventDefault(); const now = performance.now(); if (now - wheelAt < 350 || Math.abs(ev.deltaY) < 4) return; wheelAt = now;
-  const on = ev.deltaY < 0; if (on !== tableView && typeof onTableView === 'function') onTableView(on);
+  ev.preventDefault();
+  const d = Math.max(-60, Math.min(60, ev.deltaMode === 1 ? ev.deltaY * 16 : ev.deltaY));
+  lookT.zoom *= Math.exp(d * (ev.ctrlKey ? .01 : .0022)); clampLook(); if (lookSeat === 0) lookSeat = -1; wake();
+  clearTimeout(wheelAt); wheelAt = setTimeout(lookChanged, 200);
 }
 function pickMain(ev){
   if (mode !== 'game' || !S) return null;
@@ -1118,8 +1166,11 @@ async function init(host){
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = T3.PCFSoftShadowMap; renderer.autoClear = false;
     W = innerWidth; H = innerHeight; renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.setSize(W, H, false);
   { const q = (typeof settings !== 'undefined' && settings.quality != null && settings.quality !== 'auto') ? +settings.quality : null, u = new URLSearchParams(location.search).get('q'); tier = u != null ? +u : q != null ? q : detectTier(); window.TW_auto = u == null && q == null; }
-  await document.fonts.load("40px TWbrush", '東'); await document.fonts.load("40px TWserif", '1');
+  await document.fonts.load("40px TWbrush", '東'); await document.fonts.load("40px TWserif", '1'); await document.fonts.load("600 40px TWdisplay", 'You 1'); await document.fonts.load("40px TWbody", 'a');
+  const tick = async p => { if (window.TWprog) TWprog(p); await new Promise(r => setTimeout(r, 0)); };
+  await tick(62);
   await buildAtlas();
+  await tick(78);
   bodyGeo = merge([
     roundedBox(TW, IVORY_H, TL, tier ? 4 : 2, .078).translate(0, TH / 2 - IVORY_H / 2, 0),
     roundedBox(TW, JADE_H + .01, TL, tier ? 4 : 2, .078).translate(0, -TH / 2 + JADE_H / 2 + .005, 0),
@@ -1131,15 +1182,18 @@ async function init(host){
   makeMaterials();
   const pm = new T3.PMREMGenerator(renderer);
   const env = pm.fromScene(roomEnv(), .04).texture; scene.environment = env; hscene.environment = env;
+  await tick(86);
   buildTable(); buildRack(); buildTiles();
+  await tick(94);
   ok = true; applyTier();
-  window.addEventListener('pointermove', e => { if (e.pointerType !== 'mouse') return; par.tx = (e.clientX / W - .5) * -.7; par.tz = (e.clientY / H - .5) * -.45; wake(); });
+  window.addEventListener('pointermove', e => { if (e.pointerType !== 'mouse') return; if (mode === 'game'){ if (par.tx || par.tz){ par.tx = 0; par.tz = 0; wake(); } return; } par.tx = (e.clientX / W - .5) * -.35; par.tz = (e.clientY / H - .5) * -.22; wake(); });
   window.addEventListener('resize', resize);
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointerup', onUp); canvas.addEventListener('pointercancel', onUp);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerleave', () => { hoverId = null; updateHandFx(); });
   canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('dblclick', ev => { if (mode === 'game' && S && lookAway() && !pickMain(ev) && ev.clientY < H - handH - stripH * .5){ lookHome(); noClick = performance.now() + 250; } });
   canvas.addEventListener('contextmenu', e => { if (mode === 'game') e.preventDefault(); });
   canvas.addEventListener('click', e => { if (performance.now() < noClick) return; const id = pick(e); if (id !== null){ const b = document.querySelector(`#hand [data-id="${id}"]`); if (b) b.click(); return; } const hit = pickMain(e); if (hit) explainHit(hit); else if (S && S.ui && S.ui.mode === 'read') S.ui.resolve(); });
   setMode('home');
@@ -1149,7 +1203,7 @@ async function init(host){
 }
 function setMode(m){
   const first = mode === 'none';
-  mode = m;
+  mode = m; Object.assign(lookT, LOOK0); Object.assign(look, LOOK0); lookSeat = 0; orbit = null; lookChanged();
   if (!ok) return;
   if (m !== 'game'){ stillLife(first); pushT = 0; }
   resize();
@@ -1211,5 +1265,8 @@ function whenLanded(id, max = 1400){
 function tileXY(id){ const o = tiles[id]; if (!o || !o.g.visible) return null; const q = o.tgt || o.pos; return screenXY(cam, q.x, q.y, q.z); }
 function tilePx(id){ const o = tiles[id]; if (!o || !o.g.visible) return 0; o.g.updateMatrixWorld(); const a = new T3.Vector3(-.5, .35, 0).applyMatrix4(o.g.matrixWorld).project(cam), b = new T3.Vector3(.5, .35, 0).applyMatrix4(o.g.matrixWorld).project(cam); return Math.hypot((a.x - b.x) * W / 2, (a.y - b.y) * H / 2); }
 function pointXY(x, z, y = 0){ return screenXY(cam, x, y, z); }
-return { retype, resetTypes, hurry, dealing, warmUp, prof: { start(label, sync){ prof.on = true; prof.label = label; prof.sync = !!sync; wake(); }, label(l){ prof.label = l; }, stop(){ prof.on = false; return prof.frames.splice(0); } }, init, sync, setMode, setTableView, get tableView(){ return tableView; }, setHelpers, whenLanded, tileXY, tilePx, pointXY, seatXZ, rackOrder, deal, pushTo, nudge, applyTheme, renderTileImages, handXY, seatXY, slow(ms = 520){ slowUntil = performance.now() + ms; wake(); }, IMG, get ok(){ return ok; }, setFocus(id){ focusId = id; updateHandFx(); }, fx: updateHandFx, invalidate, positionLabels, setCos(o){ cos = Object.assign({ back: null, lamp: null, tint: 0xffffff, light: false }, o); if (ok && theme) applyTheme(theme); }, thump(a = 1, lamp = false){ if (!ok || reduced()) return; settleV -= a * 1.1; if (lamp) flick = 1; wake(); }, resize, setTier, get tier(){ return tier; }, get gpu(){ return window.TW_gpu; } };
+/* where the next tile will be drawn from, so the count can sit beside it */
+function plaqueXY(s){ const P = plaques[s]; if (!P || !P.g.visible) return null; return screenXY(cam, P.g.position.x, P.g.position.y, P.g.position.z); }
+function wallXY(){ if (!S || !S.wall || !S.wall.length) return null; const o = tiles[S.wall[0].id]; if (!o || !o.g.visible) return null; const q = o.tgt || o.pos; return screenXY(cam, q.x, q.y + .9, q.z); }
+return { lookAtSeat, lookHome, get looking(){ return lookAway(); }, get lookSeat(){ return lookSeat; }, wallXY, plaqueXY, retype, resetTypes, hurry, dealing, warmUp, prof: { start(label, sync){ prof.on = true; prof.label = label; prof.sync = !!sync; wake(); }, label(l){ prof.label = l; }, stop(){ prof.on = false; return prof.frames.splice(0); } }, init, sync, setMode, setTableView, get tableView(){ return tableView; }, setHelpers, whenLanded, tileXY, tilePx, pointXY, seatXZ, rackOrder, deal, pushTo, nudge, applyTheme, renderTileImages, handXY, seatXY, slow(ms = 520){ slowUntil = performance.now() + ms; wake(); }, IMG, get ok(){ return ok; }, setFocus(id){ focusId = id; updateHandFx(); }, fx: updateHandFx, invalidate, positionLabels, setCos(o){ cos = Object.assign({ back: null, lamp: null, tint: 0xffffff, light: false }, o); if (ok && theme) applyTheme(theme); }, thump(a = 1, lamp = false){ if (!ok || reduced()) return; settleV -= a * 1.1; if (lamp) flick = 1; wake(); }, resize, setTier, get tier(){ return tier; }, get gpu(){ return window.TW_gpu; } };
 })();

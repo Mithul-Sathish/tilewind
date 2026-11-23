@@ -72,11 +72,11 @@ const NET = (() => {
   }
   function why(e){
     const ty = e && (e.type || e.message);
-    if (ty === 'unavailable-id') return 'That table code is already in use. Try again.';
-    if (ty === 'peer-unavailable') return 'No table with that code. Check the code and try again.';
-    if (ty === 'nolib' || ty === 'browser-incompatible') return 'This browser cannot connect to other players.';
-    if (/claude\.ai|claudeusercontent/.test(location.host)) return 'Playing with friends does not work inside this preview. Open mithul-sathish.github.io/tilewind to play together.';
-    return 'Could not reach the other players. Check your internet connection and try again.';
+    if (ty === 'unavailable-id') return 'Code taken. Try again.';
+    if (ty === 'peer-unavailable') return 'No table with that code.';
+    if (ty === 'nolib' || ty === 'browser-incompatible') return 'This browser can\'t connect.';
+    if (/claude\.ai|claudeusercontent/.test(location.host)) return 'Not in this preview. Use mithul-sathish.github.io/tilewind';
+    return 'Can\'t reach the others. Check your internet.';
   }
 
   /* =========================================================
@@ -149,7 +149,7 @@ const NET = (() => {
     broadcast({ t: 'table', table });
     for (const p of [...pending.values()]) if (p.seat === a) p.done(p.deflt());
     if (nextReady) nextChanged();
-    note(table.seats[a].name + (left ? ' left' : ' lost connection') + '. The computer plays for them until they come back.', a);
+    note(table.seats[a].name + (left ? ' left' : ' dropped') + '. Computer takes over.', a);
     lobbyChanged(); pushNow();
   }
   function lobbyChanged(){

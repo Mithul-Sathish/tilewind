@@ -65,7 +65,7 @@ function render(){
   if (focusedId){ const f = hand.querySelector(`[data-id="${focusedId}"]`); if (f) f.focus(); }
   // calls: a quiet row at the table edge. Pass and every call are the same size; nothing is chosen for you
   const acts = ui.actions || [], lvl = ui.level || callLevel(), showRec = (lvl === 'guided' && settings.coach === 2) || S.showRec || S.mode === 'tut';
-  const whys = acts.filter(a => a.why), distinct = new Set(whys.map(a => a.why)), why = (distinct.size > 1 && lvl !== 'guided' ? whys.map(a => `<div>${a.label}: ${a.why.replace(/^./, m => m.toLowerCase())}</div>`) : [...distinct].map(w => `<div>${w}</div>`)).join('');
+  const whys = acts.filter(a => a.why && (a.kind !== 'pass' || acts.length === 1)), distinct = new Set(whys.map(a => a.why)), why = (distinct.size > 1 && lvl !== 'guided' ? whys.map(a => `<div>${a.label}: ${a.why.replace(/^./, m => m.toLowerCase())}</div>`) : [...distinct].map(w => `<div>${w}</div>`)).join('');
   const key = acts.map(a => a.label + (a.why || '')).join('|') + showRec + lvl + ui.mode;
   const box = $('#actions');
   if (box._k !== key){
@@ -86,15 +86,13 @@ function render(){
   if (S.turn !== -1 && S.mode !== 'lesson'){
     if (me.hand.length % 3 === 1) S.waits = myWaits();
     const w = S.waits || [];
-    if (w.length && (me.hand.length % 3 === 1 || S.wasReady)) g = `<span class="near">Wins with:</span>` + w.map(x => `<span class="ghost ${x.left ? '' : 'none'}" title="${tName(x.t)}: ${x.left} left">${tileHTML(x.t)}<i>${x.left}</i></span>`).join('');
-    else if (settings.coach === 2 && me.hand.length){ const st = stepsToWin(); if (st > 0 && st < 9) g = `<span class="near dim">${st + 1} tiles from winning</span>`; }
+    if (w.length && (me.hand.length % 3 === 1 || S.wasReady)) g = `<span class="near">Win on</span>` + w.map(x => `<span class="ghost ${x.left ? '' : 'none'}" title="${tName(x.t)}: ${x.left} left">${tileHTML(x.t)}<i>${x.left}</i></span>`).join('');
+    else if (settings.coach === 2 && me.hand.length){ const st = stepsToWin(); if (st > 0 && st < 9) g = `<span class="near dim">${st + 1} tiles to go</span>`; }
   }
   swapFade($('#ghosts'), g);
-  $('#bPace').textContent = PACE_NAME[settings.pace] || 'Relaxed';
-  $('#bView').classList.toggle('on', V.tableView); $('#bView').setAttribute('aria-pressed', V.tableView);
   $('#bSort').hidden = !manualRack();
-  $('#bPace').hidden = S.mode === 'net'; $('#bReact').hidden = S.mode !== 'net';
-  renderRecent();
+  $('#bReact').hidden = S.mode !== 'net';
+  renderRecent(); placeTags();
   const tense = S.turn !== -1 && (S.wasReady || S.wall.length < 16) ? 1 : 0;
   if (tense !== tenseNow){ tenseNow = tense; setTension(tense); }
   V.sync();
@@ -137,24 +135,21 @@ function explainHit(hit){
   if (S.mode === 'lesson' && typeof lessonTap === 'function' && lessonTap(hit)) return;
   if (S.claimWin && hit.kind === 'tile' && hit.id === S.claimWin.id){ S.claimWin.tap(); return; }
   if (S.ui && S.ui.mode === 'read'){ S.ui.resolve(); return; }
-  if (hit.kind === 'marker') return say(`${WIND_NAME[S.roundWind]} round. ${S.wall.length} tiles left in the wall. Three ${WIND_NAME[S.roundWind]} Winds score 1 faan for anyone this round.`, 5200);
-  if (hit.kind === 'plaque'){
-    const p = S.players[hit.pi], w = seatWind(hit.pi);
-    return say(`${hit.pi === 0 ? 'You' : p.name}: ${WIND_NAME[w]} seat${w === 0 ? ', the dealer' : ''}, ${p.score} points. Three ${WIND_NAME[w]} Winds score 1 faan for this seat.`, 5200);
-  }
+  if (hit.kind === 'marker') return say(`${WIND_NAME[S.roundWind]} round. ${S.wall.length} tiles left.`, 3600);
+  if (hit.kind === 'plaque'){ snd('pick'); return V.lookAtSeat(hit.pi === V.lookSeat ? 0 : hit.pi); }
   const id = hit.id;
   for (let pi = 0; pi < 4; pi++){
     const p = S.players[pi], who = pi === 0 ? 'You' : p.name;
     const d = p.discards.find(x => x.id === id);
-    if (d) return say(`${explainTile(d.t)} ${unseenFor(0)[d.t]} more not seen yet.`, 5200);
+    if (d) return say(`${explainTile(d.t)} ${unseenFor(0)[d.t]} unseen.`, 4200);
     const m = p.melds.find(m => m.tiles.some(x => x.id === id));
-    if (m) return say(`${pi === 0 ? 'Your' : who + '\'s'} ${m.type === 'chow' ? 'Chow: a run of three in one suit' : m.type === 'pung' ? 'Pung: three of the same tile' : 'Kong: four of the same tile'}.`, 5200);
+    if (m) return say(`${pi === 0 ? 'Your' : who + '\'s'} ${m.type === 'chow' ? 'Chow' : m.type === 'pung' ? 'Pung' : 'Kong'}.`, 5200);
     const f = p.flowers.find(x => x.id === id);
     if (f) return say(explainTile(f.t), 5200);
-    if (pi > 0 && p.hand.some(x => x.id === id)) return say(S.turn === -1 && p.hand.find(x => x.id === id).t >= 0 ? explainTile(p.hand.find(x => x.id === id).t) : `${who}'s hand: ${p.hand.length} tiles. You see them if they win.`, 4200);
+    if (pi > 0 && p.hand.some(x => x.id === id)) return say(S.turn === -1 && p.hand.find(x => x.id === id).t >= 0 ? explainTile(p.hand.find(x => x.id === id).t) : `${who}: ${p.hand.length} tiles, hidden.`, 4200);
     if (pi === 0 && S.turn === -1){ const h = p.hand.find(x => x.id === id); if (h) return say(explainTile(h.t), 5200); }
   }
-  if (S.wall.some(x => x.id === id)) say(`The wall: ${S.wall.length} tiles left to draw. If it runs out, nobody wins and nobody pays.`, 4600);
+  if (S.wall.some(x => x.id === id)) say(`Wall: ${S.wall.length} left. Empty wall, no winner.`, 3600);
 }
 
 document.addEventListener('click', e => {
@@ -180,7 +175,7 @@ document.addEventListener('click', e => {
   }
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && overlayEl('.book')){ closeBook(); return; }
+  if (e.key === 'Escape' && (overlayEl('.book') || overlayEl('.menu'))){ closeBook(); return; }
   if (!S || $('#screen-game').hidden || overlayOpen()) return;
   if (e.target.closest && e.target.closest('input')) return;
   const k = e.key.toLowerCase();
@@ -190,7 +185,7 @@ document.addEventListener('keydown', e => {
   if (k === 't'){ $('#bView').click(); return; }
   if (k === 's' && manualRack()){ sortOnce(); return; }
   if (k === 'escape' && S.ui && S.ui.mode === 'chowpick'){ S.ui.resolve(null); return; }
-  if (k === 'm' || k === 'escape'){ openBook('settings'); return; }
+  if (k === 'm' || k === 'escape'){ openMenu(); return; }
   const acts = (S.ui && S.ui.actions) || [];
   const ai = acts.findIndex(a => a.key === k);
   if (ai >= 0 && !(k === ' ' && document.activeElement && document.activeElement.closest('#hand'))){ e.preventDefault(); const b = document.querySelector(`[data-act="${ai}"]`); if (b) b.click(); return; }
@@ -245,11 +240,11 @@ function onHold(hit, x, y){
   if (!S && !hit.page) return;
   const el = $('#info'), t = hit.t;
   let html;
-  if (t == null || t < 0) html = `<b>A face-down tile</b><span>${hit.id != null && S && S.wall.some(w => w.id === hit.id) ? `The wall: ${S.wall.length} tiles left to draw.` : 'You see it only if its owner wins.'}</span>`;
+  if (t == null || t < 0) html = `<b>A face-down tile</b><span>${hit.id != null && S && S.wall.some(w => w.id === hit.id) ? `Wall: ${S.wall.length} left` : 'Hidden'}</span>`;
   else {
-    const kind = t < 27 ? `${SUIT_NAME[suitOf(t)]}, number ${numOf(t)}` : t < 31 ? 'A Wind. It has no number and only matches itself.' : t < 34 ? 'A Dragon. It has no number and only matches itself.' : 'A bonus tile. It goes to the side and you draw another.';
+    const kind = t < 27 ? `${SUIT_NAME[suitOf(t)]}, number ${numOf(t)}` : t < 31 ? 'Wind. Matches only itself.' : t < 34 ? 'Dragon. Matches only itself.' : 'Bonus. Set aside, draw again.';
     const unseen = S && S.mode !== 'lesson' && S.turn !== -1 && t < 34 ? unseenFor(0)[t] : null;
-    html = `<div class="ih">${tileHTML(t)}<b>${tName(t)}</b></div><span>${kind}</span>${unseen != null ? `<span>${unseen} of 4 not seen yet</span>` : t < 34 ? '<span>There are 4 of every tile.</span>' : ''}`;
+    html = `<div class="ih">${tileHTML(t)}<b>${tName(t)}</b></div><span>${kind}</span>${unseen != null ? `<span>${unseen} of 4 unseen</span>` : t < 34 ? '<span>4 of each</span>' : ''}`;
     if (S && t < 34){ S.holdT = t; V.sync(); }
   }
   el.innerHTML = html; fadeShow(el);
@@ -263,7 +258,7 @@ function hideInfo(){ const el = $('#info'); if (el) fadeHide(el, 140); if (S && 
 document.addEventListener('pointerdown', e => { if (!e.target.closest('#info')) { const el = $('#info'); if (el && !el.hidden) setTimeout(hideInfo, 0); } }, true);
 // the paper pages, the strip and the slip: hold a pictured tile too
 { let ht = 0; document.addEventListener('pointerdown', e => { const t = e.target.closest('.tile[data-t]'); if (!t || e.target.closest('#hand')) return; const x = e.clientX, y = e.clientY; clearTimeout(ht); ht = setTimeout(() => onHold({ t: +t.dataset.t, page: true }, x, y), 460); const stop = () => { clearTimeout(ht); removeEventListener('pointerup', stop); removeEventListener('pointercancel', stop); }; addEventListener('pointerup', stop); addEventListener('pointercancel', stop); }); }
-$('#bMenu').onclick = () => openBook('settings');
+$('#bMenu').onclick = () => openMenu();
 
 /* ---------------- the win ---------------- */
 const HE = [ // 和, stroke by stroke (禾 then 口), in a 100 x 100 box
@@ -304,60 +299,100 @@ function showScreen(name){
     if (s === name){ clearTimeout(el._ft); el.classList.remove('scr-out'); if (el.hidden){ el.hidden = false; el.classList.add('scr-in'); void el.offsetWidth; requestAnimationFrame(() => el.classList.remove('scr-in')); } }
     else if (!el.hidden && !el.classList.contains('scr-out')){ el.classList.add('scr-out'); el._ft = setTimeout(() => { el.hidden = true; el.classList.remove('scr-out'); }, 260); }
   }
+  document.body.classList.toggle('athome', name === 'home');
   if (name !== screenNow){ screenNow = name; V.setMode(name); }
 }
 function goHome(keepTable){ if (!keepTable && NET.active()) NET.leave(); token++; S = null; LS = null; $('#lesson').hidden = true; document.body.classList.remove('inlesson', 'picking'); hideInfo(); tenseNow = -1; setTension(0); closeOverlay(); [...$('#strokes').children].forEach(c => leave(c, 200)); document.body.classList.remove('moment'); renderHome(); showScreen('home'); }
 
 const LENGTHS = [[1, 'One hand', 'One hand'], [4, 'Four hands', 'Four hands'], [16, 'Sixteen hands', 'Sixteen hands, a full game']];
+/* the title screen: the name, one big Play, three small round buttons, and sound in the corner */
 function renderHome(quiet, delay = 0){
-  const r = peekResume(), k = dayKey(), db = profile.daily[k], qs = todaysQuests(), qd = qs.filter(q => profile.quests.done[q.id]).length;
-  const len = LENGTHS.find(l => l[0] === settings.length) || LENGTHS[1];
-  const playSub = r ? (r.totalHands > 1 ? `Carry on: hand ${r.handNo + 1} of ${r.totalHands}` : 'Carry on with your hand') : `${len[1]}, ${STYLES[settings.difficulty].name.toLowerCase()} opponents`;
-  const daySub = (db !== undefined ? `Best today: ${db > 0 ? '+' : ''}${db}` : 'A new deal every day') + (profile.dailyDays ? `, ${profile.dailyDays} ${profile.dailyDays === 1 ? 'day' : 'days'} played` : '');
-  $('#screen-home').innerHTML = `<div class="mark"><span class="wm">Tilewind</span><span class="seal">風</span></div>
-    <nav class="choices" aria-label="Tilewind">
-      <button class="choice c0" id="hPlay"><b>Play</b><small>${playSub}</small></button>
-      <button class="choice c3" id="hFriends"><b>Play with friends</b><small>${NET.active() && NET.table ? 'Back to your table, ' + NET.table.code : 'Make a table or join one'}</small></button>
-      <button class="choice c1" id="hDaily"><b>Daily Hand</b><small>${daySub}</small></button>
-      <button class="choice c2" id="hBook"><b>Collection</b><small>${stampCount()} of ${COLLECTION.length} stamps, ${qd} of 3 quests done</small></button>
-    </nav>`;
+  const r = peekResume();
+  const resume = r ? (r.totalHands > 1 ? `Hand ${r.handNo + 1} of ${r.totalHands}` : 'Your hand is waiting') : '';
+  const atTable = NET.active() && NET.table;
+  $('#screen-home').innerHTML = `<div class="corner r" data-audio></div>
+    <div class="title">
+      <div class="logo" style="--i:0"><span class="seal">風</span><span class="wm">Tilewind</span></div>
+      <div class="sub" style="--i:1">Hong Kong Mahjong</div>
+      <button class="gb big red ${resume ? 'two' : ''}" id="hPlay" style="--i:2"><span style="display:flex;gap:12px;align-items:center">${ICON.play}${r ? 'Continue' : 'Play'}</span>${resume ? `<small class="resume">${resume}</small>` : ''}</button>
+      <div class="trio" style="--i:3">
+        <button class="ibl" id="hHow"><span class="ib">${ICON.help}</span>How to play</button>
+        <button class="ibl" id="hFriends"><span class="ib ${atTable ? 'lit' : ''}">${ICON.friends}</span>${atTable ? 'Your table' : 'Friends'}</button>
+        <button class="ibl" id="hSet"><span class="ib">${ICON.gear}</span>Settings</button>
+      </div>
+    </div>`;
+  audioButtons($('#screen-home [data-audio]'));
   const hs = $('#screen-home'); hs.classList.remove('home-in'); hs.style.setProperty('--d', delay + 'ms');
-  hs.querySelectorAll('.choice').forEach((c, i) => c.style.setProperty('--i', i));
   if (!quiet){ void hs.offsetWidth; hs.classList.add('home-in'); }
-  $('#hPlay').onclick = () => { arm(); playOrResume(); };
-  $('#hDaily').onclick = () => { arm(); startGame('daily'); };
+  $('#hPlay').onclick = () => { arm(); firstPlay(); playOrResume(); };
+  $('#hHow').onclick = () => { arm(); profile.asked = true; save(); startLesson(!profile.tut); };
   $('#hFriends').onclick = () => { arm(); openFriends(); };
-  $('#hBook').onclick = () => openBook('hands');
-  setTimeout(() => { const b = $('#hPlay'); if (b && !overlayOpen()) b.focus({ preventScroll:true }); }, 0);
+  $('#hSet').onclick = () => openBook('settings');
+  pressSounds(hs);
+  // Enter and Space on the title screen press Play (no focus ring until the keyboard is used)
+}
+/* the first Play needs no questions: a new player gets the gentle table, and is asked what they know after the first hand */
+function firstPlay(){
+  if (profile.asked) return;
+  profile.asked = true; profile.tut = true;
+  if (!profile.kind){ Object.assign(settings, KINDS[0].set); profile.intro = Math.max(1, profile.intro || 1); V.resize(); V.setHelpers(settings.helpers); }
+  save();
 }
 
 /* ---------------- the book: collection, tables, today, rules, settings ---------------- */
 let bookTab = 'hands', lessonIdx = 0;
-const TABS = [['hands', 'Hands'], ['tables', 'Tables'], ['today', 'Today'], ['records', 'Records'], ['rules', 'Rules'], ['settings', 'Settings']];
+const TABS = [['hands', 'Hands'], ['tables', 'Tables'], ['today', 'Today'], ['records', 'Records']];
+const PANEL = { settings: 'Settings', rules: 'How to play' };
 function closeBook(){ closeOverlay(); if (S) render(); else renderHome(true); }
+/* one menu button holds everything used now and then */
+function openMenu(){
+  if (S && S.ui && S.ui.mode === 'read') return;
+  if (overlayEl('.slip')) return;
+  const inGame = !!S, net = inGame && S.mode === 'net', db = profile.daily[dayKey()];
+  const root = setOverlay(`<div class="overlay"><div class="menu paper" role="dialog" aria-modal="true" aria-label="Menu">
+    <h2>${inGame ? 'Paused' : 'Menu'}</h2>
+    ${inGame ? `<button class="gb big red" data-m="close">${ICON.play}Resume</button>` : `<button class="gb gold" data-m="daily">Daily hand${db !== undefined ? ` <small style="font:400 15px/1 var(--body);opacity:.8">best ${db > 0 ? '+' : ''}${db}</small>` : ''}</button>`}
+    <div class="row2"><button class="gb" data-m="settings">${ICON.gear}Settings</button><button class="gb" data-m="rules">${ICON.help}Rules</button></div>
+    <button class="gb" data-m="book">Collection <small style="font:400 15px/1 var(--body);opacity:.7">${stampCount()}/${COLLECTION.length}</small></button>
+    ${inGame ? `<div class="row2">${S.mode === 'play' ? '<button class="gb" data-m="new">New game</button>' : S.mode === 'tut' ? '<button class="gb" data-m="skip">Skip</button>' : ''}<button class="gb dark" data-m="home" ${S.mode === 'play' || S.mode === 'tut' ? '' : 'style="grid-column:1/-1"'}>${net ? 'Leave table' : 'Quit'}</button></div>` : '<button class="gb dark" data-m="close">Close</button>'}
+  </div></div>`);
+  pressSounds(root);
+  root.addEventListener('click', e => {
+    if (e.target.classList.contains('overlay')) return closeBook();
+    const b = e.target.closest('[data-m]'); if (!b) return; const m = b.dataset.m;
+    if (m === 'close') closeBook();
+    else if (m === 'settings' || m === 'rules') openBook(m);
+    else if (m === 'book') openBook('hands');
+    else if (m === 'daily'){ closeOverlay(); arm(); startGame('daily'); }
+    else if (m === 'new'){ closeOverlay(); startGame('play'); }
+    else if (m === 'skip'){ profile.tut = true; save(); goHome(); }
+    else if (m === 'home') goHome();
+  });
+  setTimeout(() => { const f = root.querySelector('.gb'); if (f) f.focus({ preventScroll:true }); }, 0);
+}
 function openBook(tab){
+  if (tab === 'menu') return openMenu();
   if (S && S.ui && S.ui.mode === 'read') return;
   if (overlayEl('.slip')) return;
   bookTab = tab || bookTab; ensureTiles(); if (S && V.tableView) V.setTableView(false);
-  const inGame = !!S;
-  const root = setOverlay(`<div class="overlay"><div class="book paper" role="dialog" aria-modal="true" aria-label="Collection">
-    <div class="tabs" role="tablist">${TABS.map(([id, n]) => `<button role="tab" data-tab="${id}" aria-selected="${id === bookTab}" class="${id === bookTab ? 'on' : ''}">${n}</button>`).join('')}</div>
+  const single = PANEL[bookTab];
+  const root = setOverlay(`<div class="overlay"><div class="book paper ${bookTab === 'settings' ? 'narrow' : ''}" role="dialog" aria-modal="true" aria-label="${single || 'Collection'}">
+    <div class="phead"><h2>${single || 'Collection'}</h2><button class="ib" data-close aria-label="Close">${ICON.close}</button></div>
+    ${single ? '' : `<div class="tabs" role="tablist">${TABS.map(([id, n]) => `<button role="tab" data-tab="${id}" aria-selected="${id === bookTab}" class="${id === bookTab ? 'on' : ''}">${n}</button>`).join('')}</div>`}
     <div class="bbody" id="bbody"></div>
-    <div class="bfoot">${inGame && S.mode === 'net' ? `<button class="tbtn" data-home>Leave the table</button>` : inGame ? `<button class="tbtn" data-home>Go home</button>${S.mode === 'tut' ? '<button class="tbtn" data-skip>Skip the guided hand</button>' : S.mode === 'play' ? '<button class="tbtn" data-new>Start a new game</button>' : ''}` : ''}<button class="tbtn prime" data-close>${inGame ? 'Back to the game' : 'Close'}</button></div>
   </div></div>`);
   const bk = root.querySelector('.book');
-  bk.querySelector('.tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (!b) return; bookTab = b.dataset.tab; snd('pick'); bk.querySelectorAll('[data-tab]').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); }); drawTab(); };
+  const tb = bk.querySelector('.tabs');
+  if (tb) tb.onclick = e => { const b = e.target.closest('[data-tab]'); if (!b) return; bookTab = b.dataset.tab; snd('pick'); bk.querySelectorAll('[data-tab]').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); }); drawTab(); };
   bk.querySelector('[data-close]').onclick = closeBook;
-  const h = bk.querySelector('[data-home]'); if (h) h.onclick = () => goHome();
-  const sk = bk.querySelector('[data-skip]'); if (sk) sk.onclick = () => { profile.tut = true; save(); goHome(); };
-  const nw = bk.querySelector('[data-new]'); if (nw) nw.onclick = () => { closeOverlay(); startGame('play'); };
   root.addEventListener('click', e => { if (e.target.classList.contains('overlay')) closeBook(); });
+  pressSounds(root);
   drawTab(); bk.querySelector('[data-close]').focus({ preventScroll:true });
 }
 function drawTab(){
   const el = $('#bbody'); if (!el) return; el.scrollTop = 0;
   if (bookTab === 'hands'){
-    el.innerHTML = `<p class="blead">Every hand that scores faan. Win with one and it gets stamped here with the date.</p><div class="cards">${COLLECTION.map(c => {
+    el.innerHTML = `<p class="blead">Win one to stamp it.</p><div class="cards">${COLLECTION.map(c => {
       const d = profile.stamps[c.id];
       return `<div class="card ${d ? 'got' : ''}"><div class="ch"><b>${c.name}</b><span>${c.fan} faan</span></div>${rowHTML(c.ex, d ? '' : 'sil')}<p>${d ? c.hint : c.hint}</p>${d ? `<span class="stamp"><i>印</i>${niceDate(d)}</span>` : ''}</div>`; }).join('')}</div>`;
   } else if (bookTab === 'tables'){
@@ -383,44 +418,46 @@ function drawTab(){
   } else if (bookTab === 'rules'){
     const L = LESSONS[lessonIdx], last = lessonIdx === LESSONS.length - 1;
     const quiz = L.quiz ? `<div class="quiz"><div class="quiz-q">${L.quiz.q}</div><div class="quiz-opts">${L.quiz.opts.map((o, i) => `<button class="quiz-opt" data-q="${i}">${rowHTML(o[0])}</button>`).join('')}</div><div class="quiz-fb" id="qfb"></div></div>` : '';
-    el.innerHTML = `<article class="page"><div class="eyebrow">${L.eyebrow}</div><h2>${L.title}</h2>${L.body()}${quiz}</article>
-      <div class="booknav"><button class="tbtn" id="lPrev" ${lessonIdx === 0 ? 'disabled' : ''}>Previous page</button><span class="pg">Page ${lessonIdx + 1} of ${LESSONS.length}</span><button class="tbtn" id="lNext" ${last ? 'disabled' : ''}>Next page</button></div>`;
+    el.innerHTML = `${lessonIdx === 0 && !S ? `<div class="tryrow"><button class="gb sm jade" id="sLesson">Tile lesson</button><button class="gb sm" id="sTut">Guided hand</button></div>` : ''}<article class="page"><h2>${L.title}</h2>${L.body()}${quiz}</article>
+      <div class="booknav"><button class="gb sm" id="lPrev" ${lessonIdx === 0 ? 'disabled' : ''}>${ICON.back}Back</button><span class="pg">${lessonIdx + 1} / ${LESSONS.length}</span><button class="gb sm red" id="lNext" ${last ? 'disabled' : ''}>Next</button></div>`;
+    const sl1 = $('#sLesson'); if (sl1) sl1.onclick = () => { closeOverlay(); arm(); startLesson(); };
+    const st1 = $('#sTut'); if (st1) st1.onclick = () => { closeOverlay(); arm(); startGame('tut'); };
     $('#lPrev').onclick = () => { if (lessonIdx > 0){ lessonIdx--; drawTab(); } };
     $('#lNext').onclick = () => { if (!last){ lessonIdx++; drawTab(); } };
     el.querySelectorAll('.quiz-opt').forEach(b => b.onclick = () => { const o = L.quiz.opts[+b.dataset.q]; b.classList.remove('right','wrong'); void b.offsetWidth; b.classList.add(o[2] ? 'right' : 'wrong'); $('#qfb').textContent = o[1]; snd(o[2] ? 'place' : 'nope'); });
   } else {
     const seg = (key, opts) => `<div class="seg" data-key="${key}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(settings[key]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
     const tog = key => seg(key, [[true,'On'],[false,'Off']]);
-    const sl = key => `<input type="range" min="0" max="1" step="0.05" value="${settings[key]}" data-sl="${key}" aria-label="${key === 'music' ? 'Music volume' : 'Effects volume'}">`;
+    const sl = key => `<input type="range" min="0" max="1" step="0.05" value="${settings[key]}" data-sl="${key}" aria-label="${key === 'music' ? 'Music volume' : 'Sound volume'}">`;
+    const row = (label, ctl, hint) => `<div class="set"><div>${label}${hint ? `<span class="hint">${hint}</span>` : ''}</div>${ctl}</div>`;
     el.innerHTML = `
-      <div class="set"><div>How much you know<small>${profile.kind ? KINDS.find(k => k.id === profile.kind).line : 'Sets the coach and helpers in one tap. You can still change each one below.'}</small></div><div class="seg" data-key="kind">${KINDS.map(k => `<button data-v="${k.id}" class="${profile.kind === k.id ? 'on' : ''}">${{ new:'New', casual:'Some', veteran:'A lot' }[k.id]}</button>`).join('')}</div></div>
-      <div class="set"><div>Coach<small>${['No advice.', 'Warns you before a bad throw.', 'Suggests a tile to throw and helps you decide when to take tiles.'][settings.coach]}</small></div>${seg('coach', [[2,'Full'],[1,'Warnings'],[0,'Off']])}</div>
-      <div class="set"><div>Opponents<small>${STYLES[settings.difficulty].line} Starts with your next game.</small></div>${seg('difficulty', STYLES.map((s, i) => [i, s.name]))}</div>
-      <div class="set"><div>Game length<small>${(LENGTHS.find(l => l[0] === settings.length) || LENGTHS[1])[2]}. Starts with your next game.</small></div>${seg('length', LENGTHS.map(l => [l[0], l[1]]))}</div>
-      <div class="set"><div>Music volume</div>${sl('music')}</div>
-      <div class="set"><div>Sound effects volume</div>${sl('sfx')}</div>
-      <div class="set"><div>Speed<small>${{ relaxed:'Opponents take about 1.5 seconds each.', normal:'Opponents take about 1 second each.', fast:'Opponents take about half a second each.' }[settings.pace]}</small></div>${seg('pace', [['relaxed','Relaxed'],['normal','Normal'],['fast','Fast']])}</div>
-      <div class="set"><div>Call prompts<small>${{ guided:'When you can take a tile, buttons appear and say what each choice does.', standard:'When you can take a tile, buttons appear with no advice.', expert:'No buttons. Tap a discard quickly to take it, like at a real table.' }[settings.calls]}</small></div>${seg('calls', [['guided','Guided'],['standard','Standard'],['expert','Expert']])}</div>
-      <div class="set"><div>Tile helpers<small>A small number on suit tiles and a letter on Winds.</small></div>${tog('helpers')}</div>
-      <div class="set"><div>Auto sort<small>${settings.autoSort === 'off' ? 'Off: tiles stay where you put them, and new tiles wait on the right. The Sort button tidies once.' : 'On: your rack sorts itself. Drag a tile along the rack to move it.'}</small></div>${seg('autoSort', [['on','On'],['off','Off']])}</div>
-      <div class="set"><div>Sort by<small>${settings.sortStyle === 'sets' ? 'Sets first, then pairs, then near-sets, then single tiles.' : 'By suit, then by number.'}</small></div>${seg('sortStyle', [['suit','Suit'],['sets','Sets']])}</div>
-      <div class="set"><div>One-tap throw<small>On: one tap throws a tile. Off: tap once to lift it, and again to throw.</small></div>${tog('oneTap')}</div>
-      <div class="set"><div>Large tiles<small>Makes your rack bigger.</small></div>${tog('big')}</div>
-      <div class="set"><div>Graphics<small>Now ${['Low', 'Medium', 'High'][V.tier]}${settings.quality === 'auto' ? ', picked for this device' : ''}. Pick Low if the game feels slow.</small></div>${seg('quality', [['auto','Auto'],[2,'High'],[1,'Medium'],[0,'Low']])}</div>
-      ${navigator.vibrate ? `<div class="set"><div>Vibration<small>A small buzz when tiles are thrown or taken.</small></div>${tog('haptics')}</div>` : ''}
-      <div class="set"><div>Learn the tiles<small>A short hands-on lesson: the suits, Winds and Dragons, how to win, and a turn.</small></div><button class="tbtn" id="sLesson">Start the lesson</button></div>
-      <div class="set" style="border:0"><div>Guided hand<small>One real hand, with every step explained.</small></div><button class="tbtn" id="sTut">Play the guided hand</button></div>`;
+      <div class="sgroup">Sound</div>
+      ${row('Music', `<div class="sw2">${sl('music')}${seg('musicOn', [[true,'On'],[false,'Off']])}</div>`)}
+      ${row('Sound', `<div class="sw2">${sl('sfx')}${seg('sfxOn', [[true,'On'],[false,'Off']])}</div>`)}
+      <div class="sgroup">Game</div>
+      ${row('Opponents', seg('difficulty', STYLES.map((s, i) => [i, s.name])), 'Next game')}
+      ${row('Hands', seg('length', [[1, '1'], [4, '4'], [16, '16']]), 'Next game')}
+      ${row('Speed', seg('pace', [['relaxed','Calm'],['normal','Normal'],['fast','Fast']]))}
+      ${row('Coach', seg('coach', [[2,'Full'],[1,'Some'],[0,'Off']]))}
+      ${row('Call buttons', seg('calls', [['guided','Explained'],['standard','Plain'],['expert','None']]), settings.calls === 'expert' ? 'Tap a throw fast to take it' : '')}
+      <div class="sgroup">Tiles</div>
+      ${row('Number tags', tog('helpers'))}
+      ${row('Big rack', tog('big'))}
+      ${row('Auto sort', seg('autoSort', [['on','On'],['off','Off']]))}
+      ${row('Sort by', seg('sortStyle', [['suit','Suit'],['sets','Sets']]))}
+      ${row('One-tap throw', tog('oneTap'))}
+      ${row('Graphics', seg('quality', [['auto','Auto'],[2,'High'],[1,'Mid'],[0,'Low']]), settings.quality === 'auto' ? 'Now ' + ['Low', 'Mid', 'High'][V.tier] : '')}
+      ${navigator.vibrate ? row('Vibration', tog('haptics')) : ''}`;
     el.querySelectorAll('.seg').forEach(sg => sg.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
       let v = b.dataset.v; v = v === 'true' ? true : v === 'false' ? false : isNaN(+v) ? v : +v;
       const key = sg.dataset.key;
       if (key === 'kind') setKind(v); else if (key === 'autoSort') setAutoSort(v); else settings[key] = v;
       if (key === 'quality') V.setTier(v); if (key === 'big') V.resize(); if (key === 'helpers' || key === 'kind') V.setHelpers(settings.helpers);
+      if (key === 'musicOn' || key === 'sfxOn'){ arm(); setVolumes(); refreshAudioButtons(); }
       save(); snd('pick'); const top = el.scrollTop; drawTab(); el.scrollTop = top;
     }));
-    el.querySelectorAll('[data-sl]').forEach(i => i.oninput = () => { settings[i.dataset.sl] = +i.value; save(); arm(); setVolumes(); if (i.dataset.sl === 'sfx') snd('place'); });
-    $('#sTut').onclick = () => { closeOverlay(); arm(); startGame('tut'); };
-    $('#sLesson').onclick = () => { closeOverlay(); arm(); startLesson(); };
+    el.querySelectorAll('[data-sl]').forEach(i => i.oninput = () => { settings[i.dataset.sl] = +i.value; if (+i.value > 0) settings[i.dataset.sl + 'On'] = true; save(); arm(); setVolumes(); refreshAudioButtons(); if (i.dataset.sl === 'sfx') snd('place'); });
   }
 }
 function toast(title, body){

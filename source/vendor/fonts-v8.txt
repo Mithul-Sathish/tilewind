@@ -1,0 +1,2 @@
+Lato Regular (vendor/Lato-Regular.ttf), copyright (c) 2010-2014 Lukasz Dziedzic (tyPoland), licensed under the SIL Open Font License 1.1, https://openfontlicense.org
+Fraunces SemiBold (vendor/fraunces-latin-600-normal.woff2), see Fraunces-OFL.txt

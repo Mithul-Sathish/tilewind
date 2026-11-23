@@ -13,17 +13,17 @@ function openFriends(code){
   const name = NET.store.name || '';
   const root = setOverlay(`<div class="overlay"><div class="lobby paper" role="dialog" aria-modal="true" aria-label="Play with friends">
     <h2>Play with friends</h2>
-    <p class="blead">Two to four people at one table. Computers take any empty seats. Nobody needs an account.</p>
+    <p class="blead">2 to 4 players. No sign-up.</p>
     <label class="fld"><span>Your name</span><input id="fName" maxlength="12" autocomplete="nickname" value="${name.replace(/"/g, '&quot;')}" placeholder="Your name"></label>
-    <div class="lrow"><button class="tbtn prime big" id="fHost">Make a table</button></div>
-    <div class="lor">or join a friend's table</div>
-    <div class="lrow"><label class="fld code"><span>Table code</span><input id="fCode" maxlength="5" autocapitalize="characters" autocomplete="off" spellcheck="false" value="${code || ''}" placeholder="5 letters"></label><button class="tbtn big" id="fJoin">Join the table</button></div>
+    <div class="lrow"><button class="tbtn prime big" id="fHost">New table</button></div>
+    <div class="lor">or join one</div>
+    <div class="lrow"><label class="fld code"><span>Table code</span><input id="fCode" maxlength="5" autocapitalize="characters" autocomplete="off" spellcheck="false" value="${code || ''}" placeholder="5 letters"></label><button class="tbtn big" id="fJoin">Join</button></div>
     <p class="lmsg" id="fMsg" aria-live="polite">${lobbyMsg}</p>
     <div class="bfoot"><button class="tbtn" data-close>Close</button></div>
   </div></div>`);
   lobbyMsg = '';
   const msg = t => { const m = root.querySelector('#fMsg'); if (m) m.textContent = t; };
-  const nm = () => { const v = root.querySelector('#fName').value.trim(); if (!v){ msg('Type your name first.'); root.querySelector('#fName').focus(); return null; } NET.store.name = v; NET.saveStore(); return v; };
+  const nm = () => { const v = root.querySelector('#fName').value.trim(); if (!v){ msg('Name first!'); root.querySelector('#fName').focus(); return null; } NET.store.name = v; NET.saveStore(); return v; };
   const busy = on => root.querySelectorAll('#fHost,#fJoin').forEach(b => b.disabled = on);
   root.querySelector('#fHost').onclick = async () => { const n = nm(); if (!n) return; arm(); busy(true); msg('Making a table…'); try { await NET.host(n); } catch(e){ busy(false); msg(e.message); } };
   const join = async () => { const n = nm(); if (!n) return; arm(); const c = root.querySelector('#fCode').value; busy(true); msg('Joining…'); try { await NET.join(c, n); } catch(e){ busy(false); msg(e.message); } };
@@ -38,20 +38,20 @@ function renderLobby(t){
   const host = NET.isHost(), me = NET.me, people = t.seats.filter(s => s.kind === 'human').length;
   const allReady = t.seats.every(s => s.kind !== 'human' || s.ready);
   const seat = (s, a) => s.kind === 'human' ? `<div class="seatln ${a === me ? 'me' : ''}"><i style="background:${SEAT[(a - me + 4) & 3].lac}"></i><span>${s.name}${a === me ? ' (you)' : ''}${a === t.host ? ', host' : ''}</span><b class="${s.ready ? 'ok' : ''}">${s.ready ? 'Ready' : 'Not ready'}</b></div>`
-    : `<div class="seatln open"><i></i><span>Empty seat</span><b>A computer plays</b></div>`;
+    : `<div class="seatln open"><i></i><span>Empty seat</span><b>Computer</b></div>`;
   const seg = (k, opts, words) => host ? `<div class="seg" data-tk="${k}">${opts.map(v => `<button data-v="${v}" class="${String(t[k]) === String(v) ? 'on' : ''}">${words[v]}</button>`).join('')}</div>` : `<b class="ro">${words[t[k]]}</b>`;
   const lenWord = { 1: 'One hand', 4: 'Four hands', 16: 'Sixteen hands' };
-  const why = !host ? (t.seats[me] && t.seats[me].ready ? 'Waiting for the host to start the game.' : 'Press Ready when you are set.')
-    : people < 2 ? 'Waiting for at least one friend to join.' : !allReady ? 'Waiting for everyone to press Ready.' : 'Everyone is ready.';
+  const why = !host ? (t.seats[me] && t.seats[me].ready ? 'Waiting for the host' : 'Press Ready')
+    : people < 2 ? 'Waiting for a friend' : !allReady ? 'Waiting for Ready' : 'All set!';
   const html = `<div class="overlay"><div class="lobby paper" role="dialog" aria-modal="true" aria-label="Your table">
-    <div class="lhead"><div><small>Table code</small><b class="lcode">${t.code}</b></div><button class="tbtn" id="lCopy">Copy invite link</button></div>
-    <p class="blead">Send friends the link, or tell them the code. They open Tilewind, press Play with friends, and type it in.</p>
+    <div class="lhead"><div><small>Table code</small><b class="lcode">${t.code}</b></div><button class="tbtn" id="lCopy">Copy link</button></div>
+    <p class="blead">Send the link or the code.</p>
     <div class="seats">${t.seats.map(seat).join('')}</div>
-    <div class="set"><div>Speed<small>How fast the computers play. Each person gets ${({ relaxed: 30, normal: 22, fast: 15 })[t.pace]} seconds a turn.</small></div>${seg('pace', ['relaxed', 'normal', 'fast'], PACE_WORD)}</div>
-    <div class="set"><div>Call prompts<small>${{ guided: 'Each choice to take a tile is explained.', standard: 'A small prompt with no advice.', expert: 'No prompt. Tap a discard to take it.' }[t.calls]}</small></div>${seg('calls', ['guided', 'standard', 'expert'], CALL_WORD)}</div>
+    <div class="set"><div>Speed<small>${({ relaxed: 30, normal: 22, fast: 15 })[t.pace]} s a turn</small></div>${seg('pace', ['relaxed', 'normal', 'fast'], PACE_WORD)}</div>
+    <div class="set"><div>Call prompts</div>${seg('calls', ['guided', 'standard', 'expert'], CALL_WORD)}</div>
     <div class="set" style="border:0"><div>Game length</div>${seg('length', [1, 4, 16], lenWord)}</div>
     <p class="lmsg" id="lMsg" aria-live="polite">${why}</p>
-    <div class="bfoot"><button class="tbtn" id="lLeave">Leave the table</button>${host ? `<button class="tbtn prime big" id="lStart" ${people >= 2 && allReady ? '' : 'disabled'}>Start the game</button>` : `<button class="tbtn prime big" id="lReady">${t.seats[me] && t.seats[me].ready ? 'Not ready' : 'Ready'}</button>`}</div>
+    <div class="bfoot"><button class="tbtn" id="lLeave">Leave</button>${host ? `<button class="tbtn prime big" id="lStart" ${people >= 2 && allReady ? '' : 'disabled'}>Start</button>` : `<button class="tbtn prime big" id="lReady">${t.seats[me] && t.seats[me].ready ? 'Not ready' : 'Ready'}</button>`}</div>
   </div></div>`;
   // the lobby updates in place while it is open, so it does not fade out and in on every change
   const cur = overlayEl('.lobby');
@@ -61,7 +61,7 @@ function renderLobby(t){
   root.querySelectorAll('[data-tk]').forEach(sg => sg.onclick = e => { const b = e.target.closest('button'); if (!b) return; let v = b.dataset.v; v = isNaN(+v) ? v : +v; snd('pick'); NET.setTable(sg.dataset.tk, v); });
   root.querySelector('#lCopy').onclick = async () => {
     const link = NET.link(), m = root.querySelector('#lMsg');
-    try { await navigator.clipboard.writeText(link); m.textContent = 'Link copied. Paste it to your friends.'; }
+    try { await navigator.clipboard.writeText(link); m.textContent = 'Copied!'; }
     catch(e){ m.textContent = link; }
   };
   root.querySelector('#lLeave').onclick = () => { NET.leave(); closeOverlay(); };

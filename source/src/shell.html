@@ -3,6 +3,7 @@
 <style>
 /*@FONTS@*/
 /*@FONTS2@*/
+/*@FONTS3@*/
 /* A real table under one lamp. The page is only a thin layer of type and buttons on top of a WebGL scene. */
 :root{
   color-scheme: dark;
@@ -506,19 +507,25 @@ table.cmp th{font-size:15px}
 .rin small{font-size:16px}
 .page .poker{display:none}
 #fpsbox{position:fixed;left:8px;bottom:8px;z-index:90;background:rgba(0,0,0,.8);color:#fff;font:500 14px/1.35 ui-monospace,monospace;padding:6px 8px;pointer-events:none}
+/*@SKIN@*/
 </style>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <filter id="brushy" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="4" result="t"/><feDisplacementMap in="SourceGraphic" in2="t" scale="2.4"/></filter>
 </defs></svg>
+<div id="boot"><div class="bw"><i>和</i>Tilewind</div><div class="bl"><i id="bootBar"></i></div><div id="bootMsg">Loading</div></div>
+<script>window.TWprog=function(p){var b=document.getElementById('bootBar');if(b)b.style.setProperty('--p',Math.max(4,Math.min(100,p))+'%');};TWprog(12);</script>
 <div id="stage"></div>
 <div id="veil"></div>
 <div id="screen-home" class="screen"></div>
 <div id="screen-game" class="screen" hidden>
+  <div id="hud"><div class="corner l"><button class="ib" id="bMenu" title="Menu (M)" aria-label="Menu">{{ic:menu}}</button></div><div class="corner r" data-audio></div>
+    <div id="wallTag" class="ontable" hidden></div><button id="seatTag1" class="seattag r" hidden></button><button id="seatTag3" class="seattag l" hidden></button>
+    <button class="gb sm dark" id="lookBack" hidden>{{ic:back}}My seat</button></div>
   <div id="actions"></div>
   <div id="strip">
     <div id="ghosts" aria-live="polite"></div>
     <div class="coach" id="coach" aria-live="polite"></div>
-    <div id="ctl"><button class="tbtn" id="bSort" title="Sort your rack once (S)" hidden>Sort</button><button class="tbtn" id="bHint" title="Show a good tile to throw (H)">Hint</button><button class="tbtn" id="bPace" title="Change the speed (F)">Relaxed</button><button class="tbtn" id="bView" title="Look down at the whole table (T)" aria-pressed="false">Table</button><button class="tbtn" id="bReact" title="Send a quick message" hidden>React</button><button class="tbtn" id="bMenu" title="Settings, rules and more (M)">Menu</button></div>
+    <div id="ctl"><button class="ib" id="bSort" title="Sort (S)" aria-label="Sort your tiles" hidden>{{ic:sort}}</button><button class="ib" id="bHint" title="Hint (H)" aria-label="Hint">{{ic:bulb}}</button><button class="ib" id="bReact" title="Say something" aria-label="Say something" hidden>{{ic:chat}}</button><button id="bPace" hidden></button><button id="bView" hidden></button></div>
   </div>
   <div id="recent" aria-label="Last throws" hidden></div>
   <div id="newest" hidden></div>
@@ -532,4 +539,4 @@ table.cmp th{font-size:15px}
 <div id="toasts"></div>
 <div id="info" class="paper" role="status" hidden></div>
 <div id="lesson" class="paper" hidden></div>
-<div id="boot"><div class="bw"><i>和</i>Tilewind</div><div class="bl"></div><div id="bootMsg">Setting up the table</div></div>
+

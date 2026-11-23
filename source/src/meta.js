@@ -44,10 +44,10 @@ const SEAT = [
   { name:'Left',   lac:'#27447F', bright:'#7C9BE0', ink:'#F1E3C6' }
 ];
 const STYLES = [
-  { id:'quick',   name:'Easy',     line:'Quick to take tiles, careless about what they throw.' },
-  { id:'careful', name:'Careful',  line:'They stop throwing tiles you need once you get close.' },
-  { id:'flush',   name:'Tough',    line:'They go for big one-suit hands and play safe.' },
-  { id:'mixed',   name:'Mixed',    line:'One plays safe, one goes for big hands, one plays fast. All three watch what you throw.' }
+  { id:'quick',   name:'Easy',     line:'Grab a lot, throw carelessly' },
+  { id:'careful', name:'Careful',  line:'Hold back what you need' },
+  { id:'flush',   name:'Tough',    line:'Chase big hands, play safe' },
+  { id:'mixed',   name:'Mixed',    line:'One of each' }
 ];
 
 /* ranks */
@@ -76,25 +76,25 @@ if (!themeOpen(themeOf(profile.theme))) profile.theme = 'jade';
 
 /* the collection: every scoring pattern in the game */
 const COLLECTION = [
-  { id:'win',    name:'Winning hand',     fan:1,  re:/^Mahjong$/,            ex:[0,1,2,null,13,13,13,null,27,27], hint:'Any finished hand: four sets and a pair.' },
-  { id:'self',   name:'Own draw',         fan:1,  re:/^Self-drawn$/,         ex:[20,21,null,19],                  hint:'Draw the winning tile yourself. Everyone pays.' },
-  { id:'conc',   name:'Hidden hand',      fan:1,  re:/^Concealed hand$/,     ex:[3,4,5,null,15,15,15],            hint:'Win without taking any tiles from others.' },
+  { id:'win',    name:'Winning hand',     fan:1,  re:/^Mahjong$/,            ex:[0,1,2,null,13,13,13,null,27,27], hint:'Four sets and a pair.' },
+  { id:'self',   name:'Own draw',         fan:1,  re:/^Self-drawn$/,         ex:[20,21,null,19],                  hint:'Draw the winner yourself.' },
+  { id:'conc',   name:'Hidden hand',      fan:1,  re:/^Concealed hand$/,     ex:[3,4,5,null,15,15,15],            hint:'Grab nothing.' },
   { id:'chows',  name:'All Chows',        fan:1,  re:/^All Chows$/,          ex:[0,1,2,null,12,13,14,null,22,23,24], hint:'Four runs and a pair.' },
   { id:'pungs',  name:'All Pungs',        fan:3,  re:/^All Pungs$/,          ex:[4,4,4,null,16,16,16,null,28,28,28], hint:'Four Pungs and a pair. No runs.' },
   { id:'red',    name:'Red Dragon',       fan:1,  re:/^Red Dragon pung/,     ex:[31,31,31],                       hint:'Three Red Dragons.' },
   { id:'green',  name:'Green Dragon',     fan:1,  re:/^Green Dragon pung/,   ex:[32,32,32],                       hint:'Three Green Dragons.' },
   { id:'white',  name:'White Dragon',     fan:1,  re:/^White Dragon pung/,   ex:[33,33,33],                       hint:'Three White Dragons.' },
-  { id:'seat',   name:'Seat wind',        fan:1,  re:/^Seat wind pung/,      ex:[28,28,28],                       hint:'Three of the wind on your name plate.' },
-  { id:'round',  name:'Round wind',       fan:1,  re:/^Round wind pung/,     ex:[27,27,27],                       hint:'Three of the wind in the middle of the table.' },
+  { id:'seat',   name:'Seat wind',        fan:1,  re:/^Seat wind pung/,      ex:[28,28,28],                       hint:'Three of your seat wind.' },
+  { id:'round',  name:'Round wind',       fan:1,  re:/^Round wind pung/,     ex:[27,27,27],                       hint:'Three of the round wind.' },
   { id:'kong',   name:'Kong',             fan:1,  re:/Kongs?$/,              ex:[7,7,7,7],                        hint:'Four of the same tile.' },
-  { id:'flower', name:'Own flower',       fan:1,  re:/^Own flower/,          ex:[34],                             hint:'Draw the flower with your seat number.' },
-  { id:'season', name:'Own season',       fan:1,  re:/^Own season/,          ex:[38],                             hint:'Draw the season with your seat number.' },
+  { id:'flower', name:'Own flower',       fan:1,  re:/^Own flower/,          ex:[34],                             hint:'Your seat number.' },
+  { id:'season', name:'Own season',       fan:1,  re:/^Own season/,          ex:[38],                             hint:'Your seat number.' },
   { id:'half',   name:'Half Flush',       fan:3,  re:/^Half Flush$/,         ex:[9,10,11,null,14,14,14,null,29,29], hint:'One suit, plus Winds or Dragons.' },
   { id:'full',   name:'Full Flush',       fan:6,  re:/^Full Flush$/,         ex:[18,19,20,null,22,22,22,null,25,25], hint:'One suit and nothing else.' },
   { id:'seven',  name:'Seven Pairs',      fan:4,  re:/^Seven Pairs$/,        ex:[1,1,null,9,9,null,20,20,null,33,33], hint:'Seven different pairs, no sets.' },
   { id:'honors', name:'Only Winds and Dragons', fan:10, re:/^All Honors$/,   ex:[27,27,27,null,31,31,31,null,32,32], hint:'No suit tiles at all.' },
-  { id:'last',   name:'Last tile',        fan:1,  re:/^Last tile of the wall$/, ex:[26],                          hint:'Win on the very last tile of the wall.' },
-  { id:'kongwin',name:'Kong replacement', fan:1,  re:/^Win on a Kong replacement$/, ex:[5,5,5,5,null,17],         hint:'Make a Kong, then win on the extra tile you draw.' }
+  { id:'last',   name:'Last tile',        fan:1,  re:/^Last tile of the wall$/, ex:[26],                          hint:'Win on the very last tile.' },
+  { id:'kongwin',name:'Kong replacement', fan:1,  re:/^Win on a Kong replacement$/, ex:[5,5,5,5,null,17],         hint:'Win on the tile after a Kong.' }
 ];
 const stampCount = () => COLLECTION.filter(c => profile.stamps[c.id]).length;
 
@@ -155,9 +155,9 @@ function rnd(){
 
 /* one-sentence explanations */
 function explainTile(t){
-  if (t >= 34) return `${tName(t).replace(' (', ', ').replace(')', '')}: a bonus tile. It goes to the side when drawn, and scores 1 faan for the ${WIND_NAME[(t - 34) % 4]} seat.`;
-  if (t >= 31) return `${tName(t)}. Three of them always score 1 faan.`;
-  if (t >= 27) return `${tName(t)}. Three of them score when they match your seat or the round.`;
+  if (t >= 34) return `${tName(t).replace(' (', ', ').replace(')', '')}. Bonus for ${WIND_NAME[(t - 34) % 4]}.`;
+  if (t >= 31) return `${tName(t)}. Three score 1 faan.`;
+  if (t >= 27) return `${tName(t)}. Scores as seat or round wind.`;
   const n = numOf(t), a = Math.max(1, Math.min(7, n - 1));
-  return `${tName(t)}. It fits a run like ${a}-${a + 1}-${a + 2}, or three of a kind.`;
+  return `${tName(t)}. Fits ${a}-${a + 1}-${a + 2}.`;
 }
