@@ -144,8 +144,8 @@ async function playHand(st){
       if (S.mode === 'tut') action = { type:'discard', id: p.drawnId != null ? p.drawnId : p.hand[0].id };
       else if (so.win) action = { type:'win' };
       else if (so.kongs.length) action = { type:'kong', t:so.kongs[0] };
-      else action = { type:'discard', id: turn !== 0 && gentleTable() && p.drawnId != null && p.hand.some(x => x.id === p.drawnId) && rnd() < .3 ? p.drawnId : aiDiscard(turn) };
-      await sleep(needDraw ? think * .55 : think);
+      else action = { type:'discard', id: turn !== 0 && gentleTable() && p.drawnId != null && p.hand.some(x => x.id === p.drawnId) && rnd() < .3 ? p.drawnId : botDiscard(turn) };
+      await sleep((needDraw ? think * .55 : think) * botTempo(turn, action));
     }
     if (action.type === 'win') return endWin(turn, true, { kongDraw, lastTile: S.wall.length === 0, winId: p.drawnId });
     if (action.type === 'kong'){
@@ -205,6 +205,30 @@ async function resolveClaims(from, d, mine){
   return decisions[0];
 }
 
+/* ---------------- the computer players: same rules, different temper ----------------
+   Bold players push for the win when close even if someone looks dangerous; careful ones fold.
+   They take a beat longer on hard choices and throw a fresh useless tile almost at once, the way people do. */
+function botDiscard(pi){
+  const p = S.players[pi];
+  if (S.diff === 0 || S.mode === 'tut' || S.mode === 'lesson' || window.TW_v8ai) return aiDiscard(pi); // TW_v8ai: test switch for the rules check against v8
+  const greedy = analyzeDiscards(pi, { flush: p.style === 'flush' });
+  if (greedy[0] && greedy[0].sh === 0 && threatSeats(pi).length){
+    const push = p.style === 'quick' ? .7 : p.style === 'flush' ? .45 : .12;
+    if (rnd() < push) return pickDiscardTile(pi, greedy[0].t);
+  }
+  return aiDiscard(pi);
+}
+function botTempo(pi, action){
+  if (autotest) return 1;
+  const p = S.players[pi], st = p.style === 'quick' ? .8 : p.style === 'careful' ? 1.12 : 1;
+  if (action.type === 'win') return 1.5 * st;
+  if (action.type === 'kong') return 1.2 * st;
+  const x = p.hand.find(h => h.id === action.id);
+  if (x && x.id === p.drawnId && (x.t >= 27 || countsOf(p.hand)[x.t] === 1)) return .65 * st; // drew it, does not want it
+  const c = analyzeDiscards(pi, {}), close = c.length > 1 && c[0].sh === c[1].sh && Math.abs(c[0].score - c[1].score) < 12;
+  return (close ? 1.45 : 1) * st * (.85 + Math.random() * .3);
+}
+
 /* ---------------- a table with friends: every person decides at once, on a clock ---------------- */
 async function netLocalTurn(so){
   const stop = NET.localClock('turn', NET.turnMs(), () => { say('Time up. Tile thrown for you.', 3000); if (S.ui && S.ui.resolve) S.ui.resolve(NET.defaultDiscard(0)); });
@@ -219,7 +243,7 @@ async function netClaims(from, d){
   const lvl = callLevel(), jobs = [], tag = (pi, k) => v => v ? Object.assign({ pi, k }, v) : null;
   for (let k = 1; k < 4; k++){
     const pi = (from + k) % 4, o = claimOptions(pi, d.t, from), has = anyOpt(o);
-    if (pi === 0){
+    if (pi === 0 && S.players[0].isHuman){
       if (lvl === 'expert') jobs.push(netLocalClaim(() => expertWindow(from, d), pace().window + NET.callMs()).then(tag(pi, k)));
       else if (has) jobs.push(netLocalClaim(() => humanClaim(o, d, from), NET.callMs()).then(tag(pi, k)));
     } else if (NET.live(pi)){
@@ -262,7 +286,7 @@ function humanTurn(so){
 }
 /* Call prompts. Guided explains what a call does and costs; Standard is a small, even prompt with nothing suggested;
    Expert shows nothing at all: you tap the discard yourself while it can still be claimed. A prompt only ever offers legal calls. */
-const callLevel = () => S && S.mode === 'tut' ? 'guided' : S && S.mode === 'net' ? S.netCalls : (settings.calls || 'guided');
+const callLevel = () => S && S.mode === 'tut' ? 'guided' : S && S.mode === 'net' ? (S.online ? (settings.calls === 'guided' ? 'guided' : 'standard') : S.netCalls) : (settings.calls || 'guided');
 function claimActions(o, d){
   const a = [];
   if (o.ron) a.push({ label:'Win!', kind:'win', key:'w', value:{ type:'ron' } });
@@ -336,8 +360,8 @@ async function askClaim(ui, o, d){
 function pickChow(starts, d){
   const me = S.players[0], need = new Set(); starts.forEach(s => [s, s + 1, s + 2].forEach(t => { if (t !== d.t) need.add(t); }));
   return waitHuman({ mode:'chowpick', starts: starts.slice(), picked: [], tile: d.t, need,
-    actions: [{ label:'Back', kind:'pass', key:'escape', value:null }],
-    coach: `Pick two tiles for the Chow.` });
+    actions: starts.map(st => ({ label: `${st % 9 + 1}-${st % 9 + 2}-${st % 9 + 3}`, kind:'chow', value: st })).concat([{ label:'Back', kind:'pass', key:'escape', value:null }]),
+    coach: `Which run? Tap it, or touch the two tiles.` });
 }
 function chowTap(id){
   const ui = S.ui; if (!ui || ui.mode !== 'chowpick') return false;
@@ -520,6 +544,7 @@ async function finishHand(w){
     else if (S.mode === 'play' && profile.intro >= 1 && profile.intro <= 3 && S.introShown) profile.intro++;
     if (S.mode === 'weekly') news.push(...weeklyResult(w));
     if (S.mode !== 'tut') news.push(...sitting());
+    { const dl = dayPlayed(); if (dl) news.push(dl); }
     if (S.mode === 'daily'){
       const k = dayKey(), got = w.pay[0], had = profile.daily[k];
       if (profile.dailyLast !== k){ profile.dailyLast = k; profile.dailyDays++; }
@@ -534,6 +559,7 @@ async function finishHand(w){
         profile.games++; w.gain += place === 1 ? 60 : place === 2 ? 30 : 10;
         const before = THEMES.filter(themeOpen).length; profile.themePts++;
         news.push(...questEvent({ kind:'match', place }));
+        profile.places = (profile.places || []).concat(place).slice(-50);
         const open = THEMES.filter(themeOpen); if (open.length > before && !news.some(n => /^New table/.test(n))) news.push('New table: ' + open[open.length - 1].name + '. Find it in the Collection.');
       }
       if (S.mode === 'play') clearResume();
@@ -617,7 +643,9 @@ function resultSlip(w, parts, x){
   if (x.last && S.totalHands > 1) stand = `<div class="stand"><div class="sth">${['', '1st place', '2nd place', '3rd place', '4th place'][x.place]}</div>${x.order.map((o, k) => { const i = o.i, sc = o.score != null ? o.score : o.p.score; return `<div class="${i === 0 ? 'me' : ''}"><span>${k + 1}</span><span><i style="background:${SEAT[i].lac}"></i>${S.players[i].name}</span><b>${sc}</b></div>`; }).join('')}</div>`;
   const news = (x.dailyLine ? [x.dailyLine] : []).concat(w.news).map(n => `<div>${n}</div>`).join('');
   let btns;
-  if (net) btns = `<span class="nwait" id="nWait"></span><button class="tbtn prime big" data-r="next">${x.last ? 'Back to the table' : 'Next hand'}</button>`;
+  const onl = net && NET.online;
+  if (onl && x.last) btns = `<button class="tbtn" data-r="home">Home</button><button class="tbtn prime big" data-r="online">Play again</button>`;
+  else if (net) btns = `<span class="nwait" id="nWait"></span><button class="tbtn prime big" data-r="next">${x.last ? 'Back to the table' : 'Next hand'}</button>`;
   else if ((S.mode === 'tut' || S.mode === 'play') && !profile.kind) btns = `<div class="kinds"><div class="kq">Your style?</div>${KINDS.map((k, i) => `<button class="tbtn kind ${i === 0 ? 'prime' : ''}" data-kind="${k.id}"><b>${k.name}</b><small>${k.line}</small></button>`).join('')}</div>`;
   else if (S.mode === 'tut') btns = `<button class="tbtn prime big" data-r="again">Play for real</button>`;
   else if (!x.last) btns = `<button class="tbtn prime big" data-r="next">Next hand</button>`;
@@ -626,24 +654,26 @@ function resultSlip(w, parts, x){
   const tutLine = S.mode === 'tut' && mine ? '<div class="news"><div>Real rules, real score.</div></div>' : '';
   const near = x.near != null ? x.near : nearMiss(w);
   const html = `<div class="slipwrap"><div class="slip paper ${mine ? 'mine' : ''}" role="dialog" aria-label="${title}">
-    <div class="shead"><span class="seal" style="background:${win ? SEAT[w.pi].lac : '#5c4c37'}">${win ? '和' : '日'}</span><div><h2>${title}</h2><p class="lead">${lead}</p></div></div>
+    <div class="shead"><span class="seal" style="background:${win ? SEAT[w.pi].lac : '#5c4c37'}">${win ? '和' : '日'}</span><div><h2>${title}</h2><p class="lead">${lead}</p></div>${mine ? `<b class="bigpay" id="rPay">+0</b>` : ''}</div>
     <div class="sbody">${near}${win ? `<div class="lines">${handRow}${scoring.map(l => l.html).join('')}${tot}</div>` : ''}
     ${pays}${fed}${stand}${news ? `<div class="news">${news}</div>` : ''}${tutLine}</div>
-    <div class="sfoot">${rank}<div class="sbtns">${btns}</div></div></div></div>`;
+    <div class="sfoot">${onl && x.last ? '<div class="nrated" id="nRated" hidden></div>' : ''}${rank}<div class="sbtns">${btns}</div></div></div></div>`;
   return new Promise((res, rej) => {
     const my = token, root = setOverlay(html);
     const slip = root.querySelector('.slip');
+    if (onl && x.last && S.rated){ const el = slip.querySelector('#nRated'); if (el) paintRated(el, S.rated); }
     let alive = true, done = !win;
     const finish = () => {
       if (done) return; done = true;
       slip.querySelectorAll('.wait').forEach(e => e.classList.remove('wait'));
-      if (win){ slip.querySelector('#rFan').textContent = w.res.fan; slip.querySelector('#rPts').textContent = w.val; S.revealN = parts.groups.length; S.revealFast = true; render(); }
+      if (win){ slip.querySelector('#rFan').textContent = w.res.fan; slip.querySelector('#rPts').textContent = w.val; const bp = slip.querySelector('#rPay'); if (bp){ bp.textContent = '+' + w.pay[0]; bp.classList.add('land'); } S.revealN = parts.groups.length; S.revealFast = true; render(); }
     };
     const go = v => { alive = false; leave(root, 200); if (my !== token) rej(ABORT); else res(v); };
     slip.addEventListener('click', e => {
       const kb = e.target.closest('[data-kind]'); if (kb){ setKind(kb.dataset.kind); go(S.mode === 'play' && !x.last ? 'next' : 'again'); return; }
       if (e.target.closest('[data-share]')){ shareCard(w); return; }
       const b = e.target.closest('[data-r]');
+      if (b && onl && x.last){ finish(); go(b.dataset.r); if (b.dataset.r === 'online'){ goHome(); setTimeout(openOnline, 260); } else goHome(); return; }
       if (b && net){ finish(); b.disabled = true; b.textContent = x.last ? 'Going back to the table' : 'Ready for the next hand'; NET.iAmNext(); return; }
       if (b){ finish(); go(b.dataset.r); return; }
       finish(); // a tap anywhere else on the slip shows the whole count at once
@@ -668,7 +698,10 @@ function resultSlip(w, parts, x){
       }
       if (!ok()) return;
       const pts = slip.querySelector('#rPts');
-      for (let k = 1; k <= 12 && ok(); k++){ pts.textContent = Math.round(w.val * k / 12 / 10) * 10; await wait(36); }
+      const bp = slip.querySelector('#rPay');
+      if (bp) bp.classList.add('counting');
+      for (let k = 1; k <= 12 && ok(); k++){ pts.textContent = Math.round(w.val * k / 12 / 10) * 10; if (bp) bp.textContent = '+' + Math.round(w.pay[0] * k / 12 / 10) * 10; if (bp && k % 3 === 0) snd('tick'); await wait(36); }
+      if (bp && ok()){ bp.classList.add('land'); snd('place'); }
       if (ok()){ finish(); if (mine && x.big) paintWin(1700); }
     })();
   });

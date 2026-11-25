@@ -140,14 +140,13 @@ async function buildAtlas(){
   AW = CW * COLS; AH = CH * 6;
   const c = document.createElement('canvas'); c.width = AW; c.height = AH;
   const g = c.getContext('2d'); g.fillStyle = IVORY; g.fillRect(0, 0, AW, AH);
-  const jobs = [];
-  for (let t = 0; t < 42; t++){
-    const img = new Image();
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(faceSVG(t, FONT_CSS));
-    g.filter = 'saturate(1.35) contrast(1.06)';
-    jobs.push(img.decode().then(() => g.drawImage(img, (t % COLS) * CW, Math.floor(t / COLS) * CH, CW, CH)));
-  }
-  await Promise.all(jobs);
+  // all 42 faces in one SVG, so the lettering fonts are read once rather than 42 times (this was most of the load time)
+  const cellsF = [];
+  for (let t = 0; t < 42; t++) cellsF.push(`<svg x="${(t % COLS) * CW}" y="${Math.floor(t / COLS) * CH}" width="${CW}" height="${CH}" viewBox="0 0 200 266" preserveAspectRatio="none"><rect width="200" height="266" fill="${IVORY}"/>${faceArt(t)}</svg>`);
+  const img = new Image();
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${AW}" height="${AH}" viewBox="0 0 ${AW} ${AH}"><style>${FONT_CSS}</style>${cellsF.join('')}</svg>`);
+  await img.decode();
+  g.filter = 'saturate(1.35) contrast(1.06)'; g.drawImage(img, 0, 0); g.filter = 'none';
   atlasBase = document.createElement('canvas'); atlasBase.width = AW; atlasBase.height = AH; atlasBase.getContext('2d').drawImage(c, 0, 0);
   atlasTex = new T3.CanvasTexture(c); atlasTex.colorSpace = T3.SRGBColorSpace; atlasTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   // carving: ink sits slightly below the ivory, with a soft edge
@@ -587,7 +586,7 @@ function computeHandH(){
   let tw = Math.min(W * .94 / 15.9, big ? 84 : 66, H * (big ? .108 : .088)); rows = 1;
   if (tw < (big ? 44 : 36) && W < H){ rows = 2; tw = Math.min(W * .94 / 8.9, 56, H * .062); }
   handH = Math.round(tw * (rows === 1 ? 2.3 : 3.75));
-  stripH = W < 720 ? 84 : 58;
+  stripH = W < 720 ? 98 : 58; // phones: room for the coach line under the rail, so it never sits on your score plaque
 }
 function resize(){
   if (!renderer) return;
@@ -687,7 +686,7 @@ function applyTier(){
 function setTier(t){ if (!ok) return; if (t === 'auto' || t == null){ tier = detectTier(); window.TW_auto = true; } else { tier = +t; window.TW_auto = false; } lowStep = 0; applyTier(); }
 const NOGL = /[?&]nogl=1/.test(location.search); // test only: run every motion but skip drawing, for many windows on one machine
 function draw(){
-  if (NOGL) return;
+  if (NOGL){ scene.updateMatrixWorld(); hscene.updateMatrixWorld(); cam.updateMatrixWorld(); hcam.updateMatrixWorld(); return; }
   renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
   renderer.clear(true, true, true);
   renderer.render(scene, cam);
@@ -1134,7 +1133,11 @@ function screenXY(camera, x, y, z){ tmpV.set(x, y, z).project(camera); return { 
 
 /* ---------- tile pictures for the paper panels ---------- */
 const IMG = [];
-function renderTileImages(){
+/* the flat tile pictures used in menus and the result slip. Drawn a few at a time in the background, so the
+   title screen never stalls; n = 42 finishes them at once (a game is starting) */
+let tileT = 0, tileMat = null;
+function renderTileImages(n = 42){
+  if (tileT >= 42) return true;
   const iw = 150, ih = 210;
   const sc = new T3.Scene(); sc.environment = scene.environment;
   const key = new T3.DirectionalLight(0xFFE8C8, 3.8); key.position.set(-3, 9, 5); key.castShadow = true;
@@ -1142,18 +1145,22 @@ function renderTileImages(){
   sc.add(key, new T3.HemisphereLight(0xdfe3e6, 0x6a5c48, 1.1));
   const catcher = new T3.Mesh(new T3.PlaneGeometry(6, 6), new T3.ShadowMaterial({ opacity: .28 })); catcher.rotation.x = -Math.PI / 2; catcher.receiveShadow = true; sc.add(catcher);
   const c = new T3.PerspectiveCamera(14.5, iw / ih, .5, 50); c.position.set(0, 7.4, 3.1); c.lookAt(0, .3, .02);
-  const m = makeTileMesh(0, false); m.g.position.y = LIE; sc.add(m.g);
-  const hadHelpers = helpersOn; if (hadHelpers) composeAtlas(false);
-  const oldPR = renderer.getPixelRatio(); renderer.setPixelRatio(1); renderer.setSize(iw, ih, false);
+  // the pictures never carry the helper numbers, so they use their own copy of the faces without them
+  if (!tileMat){ const tx = new T3.CanvasTexture(atlasBase); tx.colorSpace = T3.SRGBColorSpace; tileMat = M.face.clone(); tileMat.map = tx; }
+  const m = makeTileMesh(0, false); m.face.material = tileMat; m.g.position.y = LIE; sc.add(m.g);
+  // drawn at full exposure: the table may still be coming up out of the dark
+  const oldPR = renderer.getPixelRatio(), oldEx = renderer.toneMappingExposure; renderer.setPixelRatio(1); renderer.setSize(iw, ih, false); renderer.toneMappingExposure = 1;
   renderer.setClearColor(0x000000, 0);
-  for (let t = 0; t < 42; t++){
-    m.face.geometry = faceGeos[t];
+  for (const end = Math.min(42, tileT + n); tileT < end; tileT++){
+    m.face.geometry = faceGeos[tileT];
     renderer.setViewport(0, 0, iw, ih); renderer.clear(); renderer.render(sc, c);
-    IMG[t] = canvas.toDataURL('image/png');
+    IMG[tileT] = canvas.toDataURL('image/png');
   }
-  sc.remove(m.g); renderer.setPixelRatio(oldPR); renderer.setClearColor(0x000000, 1);
-  if (hadHelpers) composeAtlas(true);
+  sc.remove(m.g); renderer.setPixelRatio(oldPR); renderer.toneMappingExposure = oldEx; renderer.setClearColor(0x000000, 1);
+  catcher.geometry.dispose(); key.shadow.map && key.shadow.map.dispose();
   if (ok) resize();
+  if (tileT >= 42){ tileMat.map.dispose(); tileMat.dispose(); tileMat = null; return true; }
+  return false;
 }
 
 /* ---------- start ---------- */
@@ -1166,10 +1173,11 @@ async function init(host){
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = T3.PCFSoftShadowMap; renderer.autoClear = false;
     W = innerWidth; H = innerHeight; renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.setSize(W, H, false);
   { const q = (typeof settings !== 'undefined' && settings.quality != null && settings.quality !== 'auto') ? +settings.quality : null, u = new URLSearchParams(location.search).get('q'); tier = u != null ? +u : q != null ? q : detectTier(); window.TW_auto = u == null && q == null; }
+  performance.mark('tw-i0');
   await document.fonts.load("40px TWbrush", '東'); await document.fonts.load("40px TWserif", '1'); await document.fonts.load("600 40px TWdisplay", 'You 1'); await document.fonts.load("40px TWbody", 'a');
   const tick = async p => { if (window.TWprog) TWprog(p); await new Promise(r => setTimeout(r, 0)); };
-  await tick(62);
-  await buildAtlas();
+  performance.mark('tw-fonts'); await tick(62);
+  await buildAtlas(); performance.mark('tw-atlas');
   await tick(78);
   bodyGeo = merge([
     roundedBox(TW, IVORY_H, TL, tier ? 4 : 2, .078).translate(0, TH / 2 - IVORY_H / 2, 0),
@@ -1182,10 +1190,10 @@ async function init(host){
   makeMaterials();
   const pm = new T3.PMREMGenerator(renderer);
   const env = pm.fromScene(roomEnv(), .04).texture; scene.environment = env; hscene.environment = env;
-  await tick(86);
+  performance.mark('tw-env'); await tick(86);
   buildTable(); buildRack(); buildTiles();
-  await tick(94);
-  ok = true; applyTier();
+  performance.mark('tw-build'); await tick(94);
+  ok = true; applyTier(); performance.mark('tw-tier');
   window.addEventListener('pointermove', e => { if (e.pointerType !== 'mouse') return; if (mode === 'game'){ if (par.tx || par.tz){ par.tx = 0; par.tz = 0; wake(); } return; } par.tx = (e.clientX / W - .5) * -.35; par.tz = (e.clientY / H - .5) * -.22; wake(); });
   window.addEventListener('resize', resize);
   canvas.addEventListener('pointerdown', onDown);
@@ -1268,5 +1276,5 @@ function pointXY(x, z, y = 0){ return screenXY(cam, x, y, z); }
 /* where the next tile will be drawn from, so the count can sit beside it */
 function plaqueXY(s){ const P = plaques[s]; if (!P || !P.g.visible) return null; return screenXY(cam, P.g.position.x, P.g.position.y, P.g.position.z); }
 function wallXY(){ if (!S || !S.wall || !S.wall.length) return null; const o = tiles[S.wall[0].id]; if (!o || !o.g.visible) return null; const q = o.tgt || o.pos; return screenXY(cam, q.x, q.y + .9, q.z); }
-return { lookAtSeat, lookHome, get looking(){ return lookAway(); }, get lookSeat(){ return lookSeat; }, wallXY, plaqueXY, retype, resetTypes, hurry, dealing, warmUp, prof: { start(label, sync){ prof.on = true; prof.label = label; prof.sync = !!sync; wake(); }, label(l){ prof.label = l; }, stop(){ prof.on = false; return prof.frames.splice(0); } }, init, sync, setMode, setTableView, get tableView(){ return tableView; }, setHelpers, whenLanded, tileXY, tilePx, pointXY, seatXZ, rackOrder, deal, pushTo, nudge, applyTheme, renderTileImages, handXY, seatXY, slow(ms = 520){ slowUntil = performance.now() + ms; wake(); }, IMG, get ok(){ return ok; }, setFocus(id){ focusId = id; updateHandFx(); }, fx: updateHandFx, invalidate, positionLabels, setCos(o){ cos = Object.assign({ back: null, lamp: null, tint: 0xffffff, light: false }, o); if (ok && theme) applyTheme(theme); }, thump(a = 1, lamp = false){ if (!ok || reduced()) return; settleV -= a * 1.1; if (lamp) flick = 1; wake(); }, resize, setTier, get tier(){ return tier; }, get gpu(){ return window.TW_gpu; } };
+return { lookAtSeat, lookHome, get looking(){ return lookAway(); }, get lookSeat(){ return lookSeat; }, wallXY, plaqueXY, retype, resetTypes, hurry, dealing, warmUp, prof: { start(label, sync){ prof.on = true; prof.label = label; prof.sync = !!sync; wake(); }, label(l){ prof.label = l; }, stop(){ prof.on = false; return prof.frames.splice(0); } }, init, sync, setMode, setTableView, get tableView(){ return tableView; }, setHelpers, whenLanded, tileXY, tilePx, pointXY, seatXZ, rackOrder, deal, pushTo, nudge, applyTheme, renderTileImages, get tilesDone(){ return tileT >= 42; }, handXY, seatXY, slow(ms = 520){ slowUntil = performance.now() + ms; wake(); }, IMG, get ok(){ return ok; }, setFocus(id){ focusId = id; updateHandFx(); }, fx: updateHandFx, invalidate, positionLabels, setCos(o){ cos = Object.assign({ back: null, lamp: null, tint: 0xffffff, light: false }, o); if (ok && theme) applyTheme(theme); }, thump(a = 1, lamp = false){ if (!ok || reduced()) return; settleV -= a * 1.1; if (lamp) flick = 1; wake(); }, resize, setTier, get tier(){ return tier; }, get gpu(){ return window.TW_gpu; } };
 })();

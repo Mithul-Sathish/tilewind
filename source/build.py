@@ -11,7 +11,7 @@ core=cut(SEC+"HAND ANALYSIS",SEC+"MAIN LOOP")
 for f in ['speed','sleep','shuffle','newMatch','setupHand']:
     core=rep(core,"function "+f+"(","function "+f+"_v2(")
 core=core.replace("Math.random()","rnd()")           # seeded, so a saved hand replays exactly
-core=rep(core,"diff = settings.difficulty","diff = S.diff",0)  # opponents are fixed for a match
+core=rep(core,"diff = settings.difficulty","diff = (p.diff != null ? p.diff : S.diff)",0)  # a seat can have its own level (mixed tables, and the level test)  # opponents are fixed for a match
 assert 'settings.difficulty' not in core.replace('settings.difficulty >= 1','')
 core=core.replace("settings.difficulty >= 1","S.diff >= 1")
 ICONS={
@@ -29,29 +29,35 @@ ICONS={
  'back':'<path d="M10.5 6l-6 6 6 6M4.8 12h14.7"/>',
  'chat':'<path d="M4.5 5.5h15v10h-9l-4.5 3.8v-3.8H4.5z"/>',
  'wall':'<rect class="f" x="3" y="9" width="5" height="7" rx="1"/><rect class="f" x="9.5" y="9" width="5" height="7" rx="1"/><rect class="f" x="16" y="9" width="5" height="7" rx="1"/>',
+ 'globe':'<circle cx="12" cy="12" r="8.6"/><path d="M3.6 12h16.8M12 3.4c2.4 2.4 3.6 5.3 3.6 8.6s-1.2 6.2-3.6 8.6c-2.4-2.4-3.6-5.3-3.6-8.6s1.2-6.2 3.6-8.6z"/>',
  'eye':'<path d="M2.8 12s3.4-6 9.2-6 9.2 6 9.2 6-3.4 6-9.2 6-9.2-6-9.2-6z"/><circle cx="12" cy="12" r="2.6"/>',
 }
 icon=lambda n: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'+ICONS[n]+'</svg>'
 src=lambda f: open('src/'+f).read()
 js = "(() => {\n'use strict';\nif (!window.THREE){ document.getElementById('bootMsg').textContent = 'The game could not load. Try reloading the page.'; return; }\n"
 js += "const FONT_CSS = " + repr(open('build/fonts.css').read()) + ";\n"
+js += ""
+js = js
 js += "const ICON = " + json.dumps({k: icon(k) for k in ICONS}) + ";\n"
-js += names + src('meta.js') + src('faces.js') + src('sound.js') + core + src('view3d.js') + src('flow.js') + src('app.js') + src('more.js') + src('lesson.js') + src('net.js') + src('netui.js') + src('rules.js') + src('skin.js')
+js += names + src('meta.js') + src('faces.js') + src('sound.js') + core + src('view3d.js') + src('flow.js') + src('app.js') + src('more.js') + src('goals.js') + src('lesson.js') + src('net.js') + src('netui.js') + src('online.js') + src('rules.js') + src('skin.js')
 js += """
 /* ---------------- boot ---------------- */
 (async () => {
+  performance.mark('tw-boot');
   const good = await V.init($('#stage'));
+  performance.mark('tw-gl');
   if (!good){ $('#bootMsg').textContent = 'This device cannot show the 3D table. Try another browser, or turn on hardware acceleration in its settings.'; return; }
   V.applyTheme(themeOf(profile.theme)); applyCos(); V.warmUp(); // the table comes up out of the dark as the lamp warms
   const seasonLine = seasonTick();
   V.setHelpers(settings.helpers);
   const room = (new URLSearchParams(location.search).get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
-  renderHome(false, 650); showScreen('home'); setTimeout(ensureTiles, 250);
+  renderHome(false, 650); showScreen('home'); setTimeout(tilesInBackground, 600);
+  if (!room && NET.onlineSaved()) setTimeout(() => rejoinOnline(NET.onlineSaved()), 700);
   if (room) setTimeout(() => { if (NET.store.name && NET.store.room === room){ NET.join(room, NET.store.name).catch(e => { lobbyMsg = e.message; openFriends(room); }); } else openFriends(room); }, 700);
   TWprog(100);
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   const bt = $('#boot'); setTimeout(() => { bt.classList.add('gone'); setTimeout(() => bt.remove(), 700); }, 180);
-  window.TW_ready = true;
+  window.TW_ready = true; performance.mark('tw-ready');
   if (seasonLine) setTimeout(() => toast('A new season', seasonLine), 900);
 })();
 window.TW_state = () => S;
@@ -69,6 +75,7 @@ window.TW_autotest = (matches = 3) => new Promise(async res => {
 });
 })();
 """
+js=js.replace('/*@ONLINE@*/', __import__('os').environ.get('TW_ONLINE',''))
 shell=src('shell.html').replace('/*@FONTS@*/',open('build/fonts.css').read()).replace('/*@FONTS2@*/',open('build/fonts2.css').read()).replace('/*@FONTS3@*/',open('build/fonts3.css').read()).replace('/*@SKIN@*/',src('skin.css'))
 shell=re.sub(r'\{\{ic:(\w+)\}\}',lambda m: icon(m.group(1)),shell)
 three=open('vendor/three.min.js').read()

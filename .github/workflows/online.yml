@@ -1,8 +1,0 @@
-name: Deploy online service
-on:
-  workflow_dispatch:
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "placeholder, filled in when the service is chosen"

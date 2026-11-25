@@ -165,9 +165,12 @@ document.addEventListener('click', e => {
     if (S.ui && S.ui.mode === 'chowpick'){ chowTap(id); return; }
     if (S.ui && S.ui.mode === 'read'){ S.ui.resolve(); return; }
     if (!S.ui || S.ui.mode !== 'discard'){ V.nudge(id); snd('nope'); return; }
-    if (S.selected === id || settings.oneTap){ if (!tryDiscard(id)) render(); }
+    // a second tap throws only if the tile is still where it was when first tapped: if the rack shifted
+    // (a new tile slid in, a sort), the tap just picks it again, so a moving rack can never throw by accident
+    const q = V.handXY(id), was = S.selXY, moved = S.selected === id && q && was && Math.hypot(q.x - was.x, q.y - was.y) > 14;
+    if ((S.selected === id && !moved) || settings.oneTap){ if (!tryDiscard(id)) render(); }
     else {
-      S.selected = id; snd('pick');
+      S.selected = id; S.selXY = q ? { x: q.x, y: q.y } : null; snd('pick');
       const x = S.players[0].hand.find(h => h.id === id);
       const n = x ? onTable(x.t) : 0, tbl = n ? ` ${n} already out on the table, marked in blue.` : '';
       if (x && settings.coach && S.mode !== 'tut') say(explainTile(x.t) + tbl, 4200); else if (x && n) say(`${tName(x.t)}:${tbl}`, 3200); else render();
@@ -290,7 +293,9 @@ function fpsStop(label){
 
 /* ---------------- screens ---------------- */
 let screenNow = null;
-function ensureTiles(){ if (!V.IMG.length){ V.renderTileImages(); injectTileCSS(); } }
+function ensureTiles(n = 42){ if (V.tilesDone) return; if (V.renderTileImages(n)) injectTileCSS(); }
+/* in the background after the title screen is up: three tile pictures per step, so nothing stalls */
+function tilesInBackground(){ if (V.tilesDone) return; ensureTiles(3); if (!V.tilesDone) setTimeout(tilesInBackground, 80); }
 function showScreen(name){
   if (name === 'game') ensureTiles();
   // screens cross-fade over the table, which never goes away: the camera moves while the type changes
@@ -317,16 +322,19 @@ function renderHome(quiet, delay = 0){
       <button class="gb big red ${resume ? 'two' : ''}" id="hPlay" style="--i:2"><span style="display:flex;gap:12px;align-items:center">${ICON.play}${r ? 'Continue' : 'Play'}</span>${resume ? `<small class="resume">${resume}</small>` : ''}</button>
       <div class="trio" style="--i:3">
         <button class="ibl" id="hHow"><span class="ib">${ICON.help}</span>How to play</button>
+        ${NET.onlineURL() ? `<button class="ibl" id="hOnline"><span class="ib ${NET.onlineSaved() ? 'lit' : ''}">${ICON.globe}</span>${NET.onlineSaved() ? 'Your table' : 'Online'}</button>` : ''}
         <button class="ibl" id="hFriends"><span class="ib ${atTable ? 'lit' : ''}">${ICON.friends}</span>${atTable ? 'Your table' : 'Friends'}</button>
         <button class="ibl" id="hSet"><span class="ib">${ICON.gear}</span>Settings</button>
       </div>
+      ${profile.hands > 0 ? todayStrip() : ''}
     </div>`;
   audioButtons($('#screen-home [data-audio]'));
   const hs = $('#screen-home'); hs.classList.remove('home-in'); hs.style.setProperty('--d', delay + 'ms');
   if (!quiet){ void hs.offsetWidth; hs.classList.add('home-in'); }
-  $('#hPlay').onclick = () => { arm(); firstPlay(); playOrResume(); };
+  $('#hPlay').onclick = () => { arm(); if (!profile.asked && !profile.tut){ firstPlay(); startGame('tut'); return; } firstPlay(); playOrResume(); };
   $('#hHow').onclick = () => { arm(); profile.asked = true; save(); startLesson(!profile.tut); };
   $('#hFriends').onclick = () => { arm(); openFriends(); };
+  if ($('#hOnline')) $('#hOnline').onclick = () => { arm(); openOnline(); };
   $('#hSet').onclick = () => openBook('settings');
   pressSounds(hs);
   // Enter and Space on the title screen press Play (no focus ring until the keyboard is used)

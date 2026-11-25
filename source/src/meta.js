@@ -131,6 +131,7 @@ function questEvent(ev){
     profile.quests.done[q.id] = true; profile.themePts++;
     news.push('Quest done: ' + q.text.toLowerCase() + '.');
   }
+  if (typeof weekEvent === 'function') news.push(...weekEvent(ev));
   const open = THEMES.filter(themeOpen);
   if (open.length > before) news.push('New table open: ' + open[open.length - 1].name + '. Pick it in Collection, Tables.');
   return news;

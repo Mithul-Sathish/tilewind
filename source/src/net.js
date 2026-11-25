@@ -166,7 +166,8 @@ const NET = (() => {
         for (const [a, t] of seen) if (now - t > LOST) dropped(a);
       } else if (isGuest()){
         toHost({ t: 'ping' });
-        if (!migrating && lastHostMsg && Date.now() - lastHostMsg > LOST) hostLost();
+        if (onlineOn){ if (hostConn && lastHostMsg && Date.now() - lastHostMsg > LOST) { try { hostConn.close(); } catch(e){} } }
+        else if (!migrating && lastHostMsg && Date.now() - lastHostMsg > LOST) hostLost();
       }
     }, PING);
   }
@@ -350,7 +351,7 @@ const NET = (() => {
     if (!REACTS.includes(k)) return;
     if (isHost()){ broadcast({ t: 'react', seat: a, k }); showReact(a, k); }
   }
-  const REACTS = ['Nice hand', 'Good game', 'Oops', 'Thanks'];
+  const REACTS = ['Nice hand', 'Good game', 'Oops', 'Thanks', 'Well played', 'Hello'];
   function sendReact(k){ if (isHost()) react(me, k); else { const now = Date.now(); if (now - (reactAt.get(me) || 0) < 2500) return; reactAt.set(me, now); toHost({ t: 'react', k }); } }
   function showReact(a, k){ if (typeof netReaction === 'function' && table && S && S.mode === 'net') netReaction(rel(a), k); }
   const rel = a => (a - me + 4) & 3; // where an absolute seat sits on my screen
@@ -407,7 +408,9 @@ const NET = (() => {
       case 'note': if (typeof netNote === 'function') netNote(m.text, m.quiet); return;
       case 'share': myShare = { k: m.k, x: m.x, y: m.y }; return;
       case 'bk': backup = m; return;
-      case 'over': if (typeof netOver === 'function') netOver(); return;
+      case 'over': if (typeof netOver === 'function') netOver(m); return;
+      case 'away': if (typeof netAway === 'function') netAway(true); return;
+      case 'rated': if (onlineOn){ store.rating = m.r.to; store.games = m.r.games; saveStore(); } if (typeof netRated === 'function') netRated(m.r); return;
     }
   }
   function act(id, v){ toHost({ t: 'act', id, v }); }
@@ -468,8 +471,79 @@ const NET = (() => {
     lobbyChanged();
   }
 
+
+  /* =========================================================
+     PLAY ONLINE: a waiting room and tables on a small server of ours. The server runs the match; this browser
+     is a guest exactly like a guest at a friends' table, so it only ever receives its own tiles.
+     ========================================================= */
+  const ONLINE_DEFAULT = '/*@ONLINE@*/';
+  const onlineURL = () => { const q = qs.get('online'); if (q) return q.replace(/\/$/, ''); return ONLINE_DEFAULT.startsWith('ws') ? ONLINE_DEFAULT : ''; };
+  let onlineOn = false, queueWs = null, reconnectT = 0, reconnectTries = 0;
+  function wsConn(url){
+    const ws = new WebSocket(url), h = { data: [], close: [], open: [] };
+    const c = { get open(){ return ws.readyState === 1; }, send(m){ if (ws.readyState === 1) ws.send(JSON.stringify(m)); }, close(){ try { ws.close(); } catch(e){} }, on(k, f){ h[k].push(f); }, ws };
+    ws.onopen = () => h.open.forEach(f => f());
+    ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch(x){ return; } h.data.forEach(f => f(m)); };
+    ws.onclose = () => h.close.forEach(f => f());
+    ws.onerror = () => {};
+    return c;
+  }
+  // join the waiting room. ui: { you(m), q(m), go(), fail(text) }
+  function queue(ui){
+    const base = onlineURL();
+    if (!base){ ui.fail('Online play is not switched on yet.'); return; }
+    unqueue(); leave(true);
+    let settled = false;
+    const ws = queueWs = wsConn(base + '/queue');
+    const t = setTimeout(() => { if (!settled){ settled = true; ui.fail('Can\'t reach the online tables. Check your internet.'); unqueue(); } }, 9000);
+    ws.on('open', () => ws.send({ t: 'join', v: 9, token: store.token }));
+    ws.on('data', m => {
+      if (ws !== queueWs) return;
+      if (m.t === 'you'){ settled = true; clearTimeout(t); store.oname = m.name; store.rating = m.rating; store.games = m.games; saveStore(); ui.you(m); }
+      else if (m.t === 'q') ui.q(m);
+      else if (m.t === 'go'){ queueWs = null; ws.close(); ui.go(m); sit(m.code); }
+      else if (m.t === 'deny'){ settled = true; clearTimeout(t); unqueue(); ui.fail(m.why); }
+    });
+    ws.on('close', () => { if (ws === queueWs){ queueWs = null; if (!settled){ settled = true; clearTimeout(t); ui.fail('Can\'t reach the online tables. Check your internet.'); } else ui.fail('Lost the connection. Try again.'); } });
+  }
+  function unqueue(){ const w = queueWs; queueWs = null; if (w){ try { w.send({ t: 'cancel' }); } catch(e){} w.close(); } }
+  // sit at an online table, or sit back down after a dropped connection or a reload
+  function sit(c, quietBack){
+    clearTimeout(reconnectT);
+    const base = onlineURL(); if (!base) return;
+    if (!onlineOn || code !== c){ leave(true); }
+    onlineOn = true; role = 'guest'; code = c; alive = true;
+    store.online = { code: c, at: Date.now() }; saveStore();
+    const conn = wsConn(base + '/table/' + c);
+    let welcomed = false;
+    conn.on('open', () => conn.send({ t: 'hello', token: store.token }));
+    conn.on('data', m => {
+      lastHostMsg = Date.now();
+      if (m.t === 'welcome'){ welcomed = true; reconnectTries = 0; hostConn = conn; me = m.seat; table = m.table; if (quietBack && typeof netNote === 'function') netNote('Back at the table.', true); if (typeof netAway === 'function') netAway(false); return; }
+      if (m.t === 'deny'){ store.online = null; saveStore(); onlineOn = false; role = null; if (typeof netGone === 'function') netGone(m.why); return; }
+      if (conn === hostConn) onGuestMsg(m);
+    });
+    conn.on('close', () => {
+      if (!alive || !onlineOn || code !== c || (hostConn && conn !== hostConn)) return;
+      hostConn = null;
+      if (++reconnectTries > 12){ if (typeof netGone === 'function') netGone('Lost the connection to the table.'); return; }
+      if (typeof netNote === 'function' && reconnectTries === 1) netNote('Connection lost. Reconnecting…');
+      reconnectT = setTimeout(() => sit(c, true), Math.min(5000, 600 * reconnectTries));
+    });
+    startPing();
+  }
+  const onlineSaved = () => { const o = store.online; return o && Date.now() - o.at < 40 * 60000 && onlineURL() ? o.code : null; };
+  function back(){ toHost({ t: 'back' }); }
+  function rating(cb){
+    const base = onlineURL(); if (!base) return;
+    const ws = wsConn(base + '/queue'); const t = setTimeout(() => ws.close(), 6000);
+    ws.on('open', () => ws.send({ t: 'me', token: store.token }));
+    ws.on('data', m => { if (m.t === 'me'){ clearTimeout(t); store.oname = m.name; store.rating = m.rating; store.games = m.games; store.best = m.best; saveStore(); cb(m); ws.close(); } });
+  }
+
   function leave(quiet){
     alive = false;
+    clearTimeout(reconnectT); if (onlineOn && !quiet){ store.online = null; } onlineOn = false;
     try { if (isGuest()) toHost({ t: 'bye' }); } catch(e){}
     clearInterval(pinger);
     for (const p of [...pending.values()]) p.done(p.deflt());
@@ -486,6 +560,7 @@ const NET = (() => {
     REACTS, store, saveStore, cleanName, host, join, leave, start, setTable, ready, act, sendReact, iAmNext, waitNext, result, matchOver,
     push, pushNow, fx, live, remote, askTurn, askClaim, askExpert, localClock, turnMs, callMs, newHand, saveBackup, shuffleIds, defaultDiscard,
     isHost, isGuest, active, rel, eng: e => eng(e), seatName,
+    queue, unqueue, sit, back, rating, onlineURL, onlineSaved, get online(){ return onlineOn; },
     get table(){ return table; }, get me(){ return me; }, get code(){ return code; },
     set onLobby(f){ onLobby = f; },
     link(){ const u = new URL(location.href); u.search = ''; u.hash = ''; u.searchParams.set('room', code); if (qs.get('sig')) u.searchParams.set('sig', qs.get('sig')); return u.toString(); },

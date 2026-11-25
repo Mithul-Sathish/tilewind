@@ -70,14 +70,14 @@ function renderLobby(t){
 }
 function netStarted(){ closeOverlay(); }
 function netLobbyBack(){ goHome(true); if (NET.table) renderLobby(NET.table); }
-function netOver(){ if (!S || !S.guest) return; setTimeout(() => { goHome(true); if (NET.table) renderLobby(NET.table); }, 300); }
-function netGone(){ goHome(); toast('Table closed', 'Nobody could keep the table going.'); }
+function netOver(){ if (NET.online) return; if (!S || !S.guest) return; setTimeout(() => { goHome(true); if (NET.table) renderLobby(NET.table); }, 300); }
+function netGone(why){ const on = NET.online || why; goHome(); toast('Table closed', why || (on ? 'The table has finished.' : 'Nobody could keep the table going.')); }
 
 /* ---------------- the table, as a guest ---------------- */
 function netView(v){ if (gDealing){ gView = v; return; } applyView(v); }
 async function applyView(v){
   const fresh = !S || S.mode !== 'net' || !S.guest;
-  if (fresh){ newMatch({ mode: 'net' }); S.guest = true; gDealId = null; closeOverlay(); }
+  if (fresh){ newMatch({ mode: 'net' }); S.guest = true; S.online = NET.online; gDealId = null; closeOverlay(); }
   S.netPace = v.pace; S.netCalls = v.calls;
   for (const p of v.players){ for (const x of p.hand) V.retype(x.id, x.t); for (const m of p.melds) for (const x of m.tiles) V.retype(x.id, x.t); for (const x of p.discards.concat(p.flowers)) V.retype(x.id, x.t); }
   const newDeal = v.dealId !== gDealId;
@@ -135,6 +135,7 @@ function netResult(m){
   render();
   if (win){ V.pushTo(w.pi, big ? 1 : .55); snd(mine ? (big ? 'bigwin' : 'win') : 'lose'); haptic(mine ? [20, 60, 20, 60, 40] : 12); }
   const order = m.x.order ? m.x.order.map(o => ({ i: o.i, score: o.score })) : null;
+  if (m.x.last && NET.online){ const n = weekEvent({ kind: 'online', place: m.x.place }); const dl = dayPlayed(); m.w.news = (m.w.news || []).concat(n, dl ? [dl] : []); save(); }
   setTimeout(() => { if (S && S.guest) resultSlip(w, m.parts, { net: true, last: m.x.last, place: m.x.place, order, big, dailyLine: '', fedTs: m.fedTs, near: m.near || '' }).catch(() => {}); }, win ? 520 : 400);
 }
 function netWaiting(names){
