@@ -5967,7 +5967,9 @@ function placeTags(){
   else {
     wt.hidden = false; const n = S.wall.length;
     if (wt._n !== n){ wt._n = n; wt.innerHTML = `${ICON.wall}${n}`; wt.title = n + ' tiles left'; wt.style.color = n <= 12 ? '#FFC2A8' : ''; }
-    const lt = $('#seatTag3'), lo = lt && !lt.hidden ? 84 : 30; wt.style.left = Math.max(lo, Math.min(innerWidth - 30, p.x)) + 'px'; wt.style.top = Math.max(70, p.y - 18) + 'px';
+    const lt = $('#seatTag3'), lo = lt && !lt.hidden ? 84 : 30; let tx = Math.max(lo, Math.min(innerWidth - 30, p.x)), ty = Math.max(70, p.y - 18);
+    for (let s = 0; s < 4; s++){ const q = V.plaqueXY(s); if (q && Math.abs(q.x - tx) < 140 && Math.abs(q.y - ty) < 30) ty = q.y + 36; } // v10: never sit on a score plaque
+    wt.style.left = tx + 'px'; wt.style.top = ty + 'px';
   }
 }
 /* on a narrow screen the side seats sit past the edge: their plaque continues as a tab at that edge */
