@@ -150,7 +150,7 @@ function nearMiss(w){
     for (let q = 1; q < 4; q++){ const n = S.players[q].hand.filter(x => x.t === t).length; if (n) bits.push(`${n} with ${S.players[q].name}`); }
     return `<div>${tileHTML(t)}<span>${tName(t)}: ${bits.length ? bits.join(', ') : 'all gone'}.</span></div>`;
   }).join('');
-  return `<div class="nearmiss"><b>So close! Your winners were:</b>${rows}</div>`;
+  return `<div class="nearmiss"><b>One tile away. You were waiting on:</b>${rows}</div>`;
 }
 
 /* ---------- a rare pattern, the first time: its own moment ---------- */
