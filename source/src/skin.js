@@ -56,7 +56,7 @@ function placeSeatTags(){
     if (!off){ el.hidden = true; continue; }
     el.hidden = false; const pl = S.players[s], w = (s - S.dealer + 4) % 4;
     const key = [pl.name, pl.score, w, S.turn === s].join();
-    if (el._k !== key){ el._k = key; el.innerHTML = `<i>${WIND_HAN[w]}</i><span>${pl.name}</span><b>${pl.score}</b>`; el.style.background = SEAT[s].lac; el.style.color = SEAT[s].ink; el.classList.toggle('on', S.turn === s); }
+    if (el._k !== key){ el._k = key; el.innerHTML = `<i style="background:${SEAT[s].lac}">${WIND_HAN[w]}</i><span>${pl.name}</span><b>${pl.score}</b>`; el.style.background = '#E6DCC6'; el.style.color = '#1E160E'; el.classList.toggle('on', S.turn === s); }
     el.style.top = Math.max(80, Math.min(innerHeight * .6, p.y)) + 'px';
   }
 }

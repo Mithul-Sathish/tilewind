@@ -12,6 +12,12 @@ function audio(){
   if (actx) return actx;
   actx = new (window.AudioContext || window.webkitAudioContext)();
   sfxBus = actx.createGain(); sfxBus.connect(actx.destination);
+  try { // v10: a quiet, short room behind the effects
+    const len = Math.floor(actx.sampleRate * .42), ir = actx.createBuffer(2, len, actx.sampleRate);
+    for (let ch = 0; ch < 2; ch++){ const d = ir.getChannelData(ch); let lp = 0; for (let i = 0; i < len; i++){ lp += (Math.random() * 2 - 1 - lp) * .35; d[i] = lp * Math.pow(1 - i / len, 3.2) * (i < actx.sampleRate * .004 ? 0 : 1); } }
+    const cv = actx.createConvolver(); cv.buffer = ir; const wet = actx.createGain(); wet.gain.value = .22;
+    sfxBus.connect(cv).connect(wet).connect(actx.destination);
+  } catch(e){}
   musBus = actx.createGain(); musBus.connect(actx.destination);
   noiseBuf = actx.createBuffer(1, actx.sampleRate * .3, actx.sampleRate);
   const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -32,16 +38,28 @@ function snd(kind){
     const ac = audio(); if (ac.state === 'suspended') ac.resume();
     const now = ac.currentTime;
     const clack = (at, freq, vol, thump, thumpVol, decay = .04, q = 2.2) => {
-      const pitch = jit(1, .06), v = jit(vol, .1), t0 = now + at;
+      // v10: a struck tile rings at a few stiff, inharmonic modes for a few hundredths of a second; a filtered-noise
+      // click only gave the hiss. A very short noise tick starts it, the modes carry the "tock", the table gives the thud.
+      const pitch = jit(1, .05), v = jit(vol, .1), t0 = now + at;
       const s = ac.createBufferSource(); s.buffer = noiseBuf; s.playbackRate.value = pitch;
-      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = freq * pitch; bp.Q.value = q;
-      const g = ac.createGain(); g.gain.setValueAtTime(v, t0); g.gain.exponentialRampToValueAtTime(.0006, t0 + decay);
-      s.connect(bp).connect(g).connect(sfxBus); s.start(t0, Math.random() * .1); s.stop(t0 + decay + .02);
-      if (thump){
+      const hp = ac.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = freq * 1.4 * pitch; hp.Q.value = .7;
+      const g = ac.createGain(); g.gain.setValueAtTime(v * .55, t0); g.gain.exponentialRampToValueAtTime(.0005, t0 + .006);
+      s.connect(hp).connect(g).connect(sfxBus); s.start(t0, Math.random() * .2); s.stop(t0 + .012);
+      const f0 = freq * .62 * pitch, modes = [[1, 1, 1], [1.594, .62, .7], [2.136, .42, .5], [2.873, .3, .36], [3.712, .16, .25]];
+      for (const [r, a, dk] of modes){
+        const o = ac.createOscillator(), og = ac.createGain(); o.type = 'sine'; o.frequency.value = f0 * r * jit(1, .012);
+        const d = Math.max(.012, decay * (.9 + q * .1) * dk);
+        og.gain.setValueAtTime(0, t0); og.gain.linearRampToValueAtTime(v * a * .34, t0 + .0012); og.gain.exponentialRampToValueAtTime(.0004, t0 + d);
+        o.connect(og).connect(sfxBus); o.start(t0); o.stop(t0 + d + .01);
+      }
+      if (thump){ // the board under the cloth: a damped low knock, slightly lowpassed noise so it is wood, not a tone
         const o = ac.createOscillator(), og = ac.createGain(); o.type = 'sine';
-        o.frequency.setValueAtTime(thump * pitch * 1.25, t0); o.frequency.exponentialRampToValueAtTime(thump * pitch, t0 + .03);
-        og.gain.setValueAtTime(v * thumpVol, t0); og.gain.exponentialRampToValueAtTime(.0006, t0 + .1);
-        o.connect(og).connect(sfxBus); o.start(t0); o.stop(t0 + .12);
+        o.frequency.setValueAtTime(thump * pitch * 1.35, t0); o.frequency.exponentialRampToValueAtTime(thump * pitch * .9, t0 + .05);
+        og.gain.setValueAtTime(v * thumpVol * .8, t0); og.gain.exponentialRampToValueAtTime(.0005, t0 + .075);
+        o.connect(og).connect(sfxBus); o.start(t0); o.stop(t0 + .09);
+        const n = ac.createBufferSource(); n.buffer = noiseBuf; const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; const ng = ac.createGain();
+        ng.gain.setValueAtTime(v * thumpVol * .5, t0); ng.gain.exponentialRampToValueAtTime(.0005, t0 + .04);
+        n.connect(lp).connect(ng).connect(sfxBus); n.start(t0, Math.random() * .2); n.stop(t0 + .05);
       }
     };
     const slide = (at, dur, vol) => { // a tile drawn across wood

@@ -265,9 +265,9 @@ button:focus:not(:focus-visible){outline:none}
 .seattag[hidden]{display:none}
 .seattag.l{left:0;border-radius:0 12px 12px 0}
 .seattag.r{right:0;border-radius:12px 0 0 12px}
-.seattag i{font:400 18px/1 TWbrush;font-style:normal}
+.seattag i{font:400 17px/1 TWbrush;font-style:normal;color:#F4EAD5;width:26px;height:26px;display:grid;place-items:center;border-radius:3px;margin-bottom:2px}
 .seattag b{font:600 15px/1 var(--display)}
-.seattag.on{outline:2px solid #FFE7A8;outline-offset:-2px}
+.seattag.on{box-shadow:inset 0 -4px 0 #A8281E,0 3px 0 rgba(0,0,0,.35)}
 .seattag{pointer-events:auto}
 
 /* ---------- v9: play online ---------- */
@@ -340,3 +340,69 @@ button:focus:not(:focus-visible){outline:none}
 }
 /* v9 short screens (phones on their side): the strip keeps only the two headings with their counts and the footer, so it fits under the buttons */
 @media (max-height:480px){.today{padding:8px 14px;gap:4px 22px}.today ul{display:none}.today .th{border-bottom:0;margin-bottom:0;padding-bottom:0}.today .tfoot{padding-top:6px;margin-top:2px}}
+
+/* ================= v10: quieter, better made =================
+   The v8 buttons were right in shape but loud: thick lips, bright colours, cream discs everywhere.
+   Here the lips are thin, the colours are the lacquer of a real set (oxblood, jade, old gold), and the
+   corner buttons during play are dark and small so the table is what you look at. No gradients. */
+:root{
+  --cream:#EFE4CC; --cream-lip:#B8A27A; --ink2:#24180E;
+  --red:#A8322A; --red-lip:#6A1A14; --jade:#226E55; --jade-lip:#123F30; --gold:#C99A3E; --gold-lip:#7C5C1F; --blue:#2A4C86; --blue-lip:#162B4E;
+  --hair:rgba(239,228,204,.16); --glass:rgba(18,12,7,.78);
+}
+.gb{border-radius:12px;box-shadow:0 3px 0 var(--bl),0 8px 16px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.22);letter-spacing:.01em}
+.gb:active,.gb.press{transform:translateY(2px);box-shadow:0 1px 0 var(--bl),0 3px 6px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.15)}
+.gb.big{border-radius:14px;min-height:64px;font-size:29px;box-shadow:0 4px 0 var(--bl),0 12px 26px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.22)}
+.gb.big:active{transform:translateY(3px);box-shadow:0 1px 0 var(--bl),0 4px 10px rgba(0,0,0,.3)}
+.gb.sm{border-radius:10px;box-shadow:0 2px 0 var(--bl),0 5px 10px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.2)}
+.ib{box-shadow:0 3px 0 var(--bl),0 6px 12px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.3)}
+.ib:active,.ib.press{transform:translateY(2px);box-shadow:0 1px 0 var(--bl)}
+svg.ic{stroke-width:2}
+/* corner buttons on the table: dark, small, a hairline edge */
+#hud .corner .ib,#ctl .ib,#screen-home .corner .ib{--bc:var(--glass);--fc:#EFE4CC;width:44px;height:44px;box-shadow:inset 0 0 0 1px var(--hair),0 4px 12px rgba(0,0,0,.35);backdrop-filter:none}
+#hud .corner .ib svg,#ctl .ib svg,#screen-home .corner .ib svg{width:21px;height:21px}
+#hud .corner .ib:active,#ctl .ib:active,#screen-home .corner .ib:active{transform:scale(.94);box-shadow:inset 0 0 0 1px var(--hair)}
+#hud .corner .ib.off,#screen-home .corner .ib.off{--fc:#8C7F68}
+#ctl .ib.lit{--bc:var(--gold);--fc:#24180E}
+/* the home buttons under Play */
+.ibl{font:600 15px/1 var(--display);color:#EFE4CC;gap:8px}
+.ibl .ib{width:58px;height:58px;--bc:var(--glass);--fc:#EFE4CC;box-shadow:inset 0 0 0 1px rgba(239,228,204,.22),0 6px 14px rgba(0,0,0,.4)}
+.ibl .ib svg{width:26px;height:26px}
+.ibl:active .ib{transform:scale(.94);box-shadow:inset 0 0 0 1px rgba(239,228,204,.22)}
+.ibl .ib.lit{--bc:var(--gold);--fc:#24180E}
+.logo .seal{box-shadow:0 3px 0 var(--red-lip),0 10px 22px rgba(0,0,0,.45);border-radius:.14em}
+.logo .wm{text-shadow:0 2px 0 #1E130A,0 10px 30px rgba(0,0,0,.65)}
+/* pills on the table */
+#coach > span,#ghosts > span{background:var(--glass);box-shadow:inset 0 0 0 1px var(--hair),0 4px 12px rgba(0,0,0,.3)}
+.whyline{background:var(--glass);box-shadow:inset 0 0 0 1px var(--hair)}
+.ontable{background:rgba(18,12,7,.66);box-shadow:inset 0 0 0 1px var(--hair)}
+/* call buttons */
+.call{border-radius:12px;box-shadow:0 3px 0 var(--cream-lip),0 8px 16px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.3)}
+.call.k-win{box-shadow:0 3px 0 var(--red-lip),0 8px 16px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.2)}
+.call.k-pung,.call.k-kong{box-shadow:0 3px 0 var(--gold-lip),0 8px 16px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.25)}
+.call.k-chow{box-shadow:0 3px 0 var(--jade-lip),0 8px 16px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.2)}
+.call:active{transform:translateY(2px)}
+/* paper: menus, books and the result slip */
+.paper{border-radius:14px;box-shadow:0 3px 0 var(--cream-lip),0 24px 60px rgba(0,0,0,.55)}
+.paper .tbtn{border-radius:10px;box-shadow:0 2px 0 var(--cream-lip),inset 0 0 0 1.5px #D3C09A}
+.paper .tbtn.prime{box-shadow:0 2px 0 var(--red-lip),inset 0 1px 0 rgba(255,255,255,.2)}
+.slip{border-radius:16px}
+.shead .seal{border-radius:6px}
+.tabs button{border-radius:9px}
+.card,.sw{border-radius:10px}
+/* the home strip: one quiet line of today, not a dashboard */
+.today{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:min(720px,94vw);padding:12px 20px 13px;border:0;border-radius:12px;background:rgba(14,9,5,.66);box-shadow:inset 0 0 0 1px rgba(239,228,204,.1);width:auto;max-width:94vw;color:#E6DABF;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.today .tfoot2{display:flex;gap:26px;align-items:center;justify-content:center;flex-wrap:wrap}
+.today .run{font:400 15px/1 var(--body);color:#D9CCAE;display:flex;align-items:baseline;gap:6px}
+.today .run b{font:600 26px/1 var(--display);color:#F4EAD5}
+.today .tq{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+.today .tq span{display:flex;align-items:center;gap:7px;font:400 15px/1.2 var(--body);color:#E6DABF}
+.today .tq span i{width:11px;height:11px;border-radius:50%;border:1.5px solid #A8977A;flex:none}
+.today .tq span.done{color:#9C8E74;text-decoration:line-through;text-decoration-color:rgba(156,142,116,.7)}
+.today .tq span.done i{background:var(--red);border-color:var(--red)}
+.today .nu{display:flex;align-items:center;gap:9px;font:400 15px/1 var(--body);color:#D9CCAE}
+.today .nu i{display:block;width:70px;height:4px;border-radius:2px;background:rgba(239,228,204,.18);overflow:hidden}
+.today .nu u{display:block;height:100%;background:var(--gold)}
+/* the result slip: news reads as one quiet list, at most three lines */
+.news > div.more{color:#8A7558;font-style:italic}
+@media (max-width:560px){.today .tq{flex-direction:column;align-items:flex-start;gap:8px}.today{align-items:stretch;padding:14px 18px}.today .tfoot2{justify-content:space-between}}

@@ -146,7 +146,7 @@ async function buildAtlas(){
   const img = new Image();
   img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${AW}" height="${AH}" viewBox="0 0 ${AW} ${AH}"><style>${FONT_CSS}</style>${cellsF.join('')}</svg>`);
   await img.decode();
-  g.filter = 'saturate(1.35) contrast(1.06)'; g.drawImage(img, 0, 0); g.filter = 'none';
+  g.filter = 'saturate(1.25) contrast(1.06)'; g.drawImage(img, 0, 0); g.filter = 'none';
   atlasBase = document.createElement('canvas'); atlasBase.width = AW; atlasBase.height = AH; atlasBase.getContext('2d').drawImage(c, 0, 0);
   atlasTex = new T3.CanvasTexture(c); atlasTex.colorSpace = T3.SRGBColorSpace; atlasTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   // carving: ink sits slightly below the ivory, with a soft edge
@@ -167,8 +167,8 @@ async function buildAtlas(){
   for (let t = 0; t < 31; t++){
     const x = (t % COLS) * CW, y = Math.floor(t / COLS) * CH, txt = t < 27 ? String(t % 9 + 1) : 'ESWN'[t - 27];
     const col = t < 27 ? ['#A3221B', '#1B3566', '#185E31'][Math.floor(t / 9)] : '#1A1A1A';
-    const bw = CW * .36, bh = CH * .28, bx = x + CW * .02, by = y + CH * .018;
-    cells.push(`<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="${CW * .05}" fill="${col}"/><text x="${bx + bw / 2}" y="${by + bh * .8}" text-anchor="middle" fill="#F4ECDA" font-family="TWserif" font-weight="700" font-size="${CW * (t < 27 ? .36 : .3)}">${txt}</text>`);
+    const bx = x + CW * .045, by = y + CH * .035;
+    cells.push(`<text x="${bx}" y="${by + CH * .2}" text-anchor="start" fill="${col}" font-family="TWserif" font-weight="700" font-size="${CW * (t < 27 ? .36 : .3)}">${txt}</text>`);
   }
   helperImg = new Image();
   helperImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${AW}" height="${AH}" viewBox="0 0 ${AW} ${AH}"><style>${FONT_CSS} text{font-variant-numeric:lining-nums;font-feature-settings:"lnum"}</style>${cells.join('')}</svg>`);
@@ -222,7 +222,7 @@ function makeMaterials(){
   const rackPale = woodTex([196, 158, 108]); rackPale.repeat.set(.5, 1.4); M.rackMaps = { dark: rackWood, light: rackPale };
   M.rack = new T3.MeshPhysicalMaterial({ color: 0xffffff, map: rackWood, roughness: .4, clearcoat: .6, clearcoatRoughness: .3, envMapIntensity: .45 });
   M.brass = new T3.MeshStandardMaterial({ color: 0xC9A24A, metalness: .9, roughness: .42, roughnessMap: sc, envMapIntensity: 1.1 });
-  const fl = woodTex([26, 20, 16]); fl.repeat.set(12, 26); M.floor = new T3.MeshStandardMaterial({ color: 0xffffff, map: fl, roughness: .9 });
+  const fl = woodTex([46, 32, 22]); fl.repeat.set(16, 34); M.floor = new T3.MeshStandardMaterial({ color: 0xffffff, map: fl, roughness: .9 });
 }
 const BODY_MATS = () => [M.ivory, M.jade, M.seam];
 let woodDark, woodLight;
@@ -244,7 +244,7 @@ let spot, hspot, hemiMain, turnSpot, felt, floor, rail, rackGroup, rackBars = []
 const plaques = [], lampCol = new T3.Color(0xFFE2B8), warmCol = new T3.Color(0xFFC98A);
 let marker = null, dealerDisc = null, warm = 0, warmT = 0, turnI = 0, turnIT = 0; const turnPos = new T3.Vector3(0, 0, 9), turnPosT = new T3.Vector3(0, 0, 9);
 const lightsFor = (sc, isHand) => {
-  const key = new T3.SpotLight(0xFFE2B8, isHand ? 6 : 6.6, 0, isHand ? .7 : .5, 1, 0);
+  const key = new T3.SpotLight(0xFFE2B8, isHand ? 6 : 6.6, 0, isHand ? .7 : .6, 1, 0);
   if (isHand){ key.position.set(-7, 10, 16); key.target.position.set(0, 0, 0); }
   else { key.position.set(-11, 36, 13); key.target.position.set(1.2, 0, -.8); }
   key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0003; key.shadow.normalBias = .02; key.shadow.blurSamples = 16;
@@ -255,7 +255,7 @@ const lightsFor = (sc, isHand) => {
   return key;
 };
 function buildTable(){
-  scene.background = new T3.Color(0x0b0a08);
+  scene.background = new T3.Color(0x0b0a08); scene.fog = new T3.Fog(0x0b0a08, 70, 150);
   spot = lightsFor(scene, false);
   felt = new T3.Mesh(new T3.PlaneGeometry(26.6, 26.6), M.felt); felt.rotation.x = -Math.PI / 2; felt.receiveShadow = true; scene.add(felt);
   // walnut rail: four boards, grain running along each one
@@ -313,14 +313,17 @@ function drawPlaque(s){
   const key = [P.shown, w, portrait, on, theme && theme.id, p.name].join();
   if (P.key === key) return; P.key = key;
   const g = P.c.getContext('2d'), a = SEAT[s];
-  g.fillStyle = a.lac; g.fillRect(0, 0, 1024, 160);
-  g.strokeStyle = a.ink; g.globalAlpha = .5; g.lineWidth = 3; g.strokeRect(10, 10, 1004, 140); g.globalAlpha = 1;
-  g.fillStyle = a.ink; g.textBaseline = 'middle';
-  g.font = "118px TWbrush"; g.textAlign = 'center'; g.fillText(WIND_HAN[w], 92, 84);
-  g.globalAlpha = .5; g.fillRect(170, 30, 3, 100); g.globalAlpha = 1;
-  g.font = "600 86px TWdisplay"; g.textAlign = 'left'; g.fillText(s === 0 ? 'You' : p.name, 200, 86, 470);
-  g.font = "600 124px TWdisplay"; g.textAlign = 'right'; g.fillText(String(P.shown), 994, 88);
-  P.tex.needsUpdate = true; P.mat.emissiveIntensity = on ? .2 : 0;
+  // v10: a bone plate set in brass, lettering cut in and inked, the seat's colour only on a small seal
+  g.fillStyle = '#E6DCC6'; g.fillRect(0, 0, 1024, 160);
+  { const gr = g.createLinearGradient(0, 0, 0, 160); gr.addColorStop(0, 'rgba(255,250,238,.35)'); gr.addColorStop(1, 'rgba(120,96,60,.18)'); g.fillStyle = gr; g.fillRect(0, 0, 1024, 160); }
+  for (let i = 0; i < 70; i++){ g.fillStyle = `rgba(140,112,70,${.025 + rand(i * 3 + s * 211) * .03})`; g.fillRect(0, rand(i * 3 + 1 + s * 211) * 160, 1024, 1 + rand(i * 3 + 2 + s * 211) * 2); } // fixed grain: never draws on the game's random numbers
+  g.fillStyle = a.lac; g.fillRect(14, 14, 132, 132);
+  g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(14, 140, 132, 6);
+  g.fillStyle = '#F4EAD5'; g.textBaseline = 'middle'; g.font = "104px TWbrush"; g.textAlign = 'center'; g.fillText(WIND_HAN[w], 80, 84);
+  g.fillStyle = '#1A130C'; g.font = "600 80px TWdisplay"; g.textAlign = 'left'; g.fillText(s === 0 ? 'You' : p.name, 180, 86, 440);
+  g.font = "600 112px TWdisplay"; g.textAlign = 'right'; g.fillText(String(P.shown), 1000, 88);
+  if (on){ g.fillStyle = a.lac; g.fillRect(180, 138, 300, 8); }
+  P.tex.needsUpdate = true; P.mat.emissiveIntensity = on ? .12 : 0;
 }
 function drawMarker(force){
   const left = S.wall.length, key = [S.roundWind, S.handNo, S.totalHands, left, S.mode].join();
@@ -517,11 +520,12 @@ function placeCam(c, R, tx, tz, ox = 0, oz = 0, tilt = cv.tilt){ c.position.set(
    side players' hidden tiles fall outside the frame); a wide screen shows the whole table; table view looks straight down. */
 function frameBox(aspect){ // in table view a phone zooms onto the four discard grids
   const portrait = aspect < .9;
-  if (mode !== 'game') return { x: 14.7, z0: -14.7, z1: 14.7, frac: portrait ? .99 : .8, tilt: portrait ? 15 : aspect > 1.9 ? 27 : 21 };
+  if (mode !== 'game') return { x: 14.7, z0: -14.7, z1: 14.7, frac: portrait ? 1.32 : .84, tilt: portrait ? 30 : aspect > 1.9 ? 40 : 36 }; // a phone: the table runs off the sides, so it fills the screen behind the title
   if (S && S.mode === 'lesson') return portrait ? { x: 7.6, z0: -13.5, z1: 10, frac: 1, tilt: 9 } : { x: 10.5, z0: -11, z1: 10, frac: .96, tilt: 16 };
   if (tableView) return portrait ? { x: 7.75, z0: -7.75, z1: 7.75, frac: 1, tilt: .5 } : { x: 10.2, z0: -10.2, z1: 10.2, frac: .98, tilt: .5 };
   if (portrait) return { x: 9.75, z0: -15.6, z1: 11.4, frac: 1, tilt: 13 };
-  return { x: 14.7, z0: -14.7, z1: 14.7, frac: .97, tilt: aspect > 1.9 ? 27 : 21 };
+  if (aspect > 2.2) return { x: 13.6, z0: -12.6, z1: 14.7, frac: 1, tilt: 47 }; // a sideways phone: lower still, so the table uses the width
+  return { x: 14.3, z0: -13.6, z1: 14.9, frac: 1, tilt: aspect > 1.9 ? 38 : 33 }; // v10: lower and closer, like a photograph taken from a chair
 }
 function fitCamera(snapNow = true){
   const vh = Math.max(1, H - handH - stripH), aspect = W / vh, b = frameBox(aspect);
@@ -564,10 +568,11 @@ function lookChanged(){ if (typeof onLook === 'function') onLook(lookAway(), loo
 function updateCam(){
   const g = mode === 'game';
   const R = cv.R * (1 - pushZoom * push) * (g ? look.zoom : 1), tilt = cv.tilt + (g ? look.tilt : 0), yaw = g ? look.yaw : 0;
-  const tx = cv.tx + pushX * push + (g ? look.px : 0), tz = cv.tz + pushZ * push + (mode === 'home' ? (W < H ? 6 : 2.4) : 0) + (g ? look.pz : 0);
+  const tx = cv.tx + pushX * push + (g ? look.px : 0), tz = cv.tz + pushZ * push + (mode === 'home' ? (W < H ? 3.5 : 2.4) : 0) + (g ? look.pz : 0);
   const oz = R * Math.sin(tilt);
   cam.position.set(tx + oz * Math.sin(yaw) + par.x, R * Math.cos(tilt), tz + oz * Math.cos(yaw) + par.z);
   cam.lookAt(tx, 0, tz); cam.updateMatrixWorld();
+  if (scene.fog){ scene.fog.near = R + 22; scene.fog.far = R + 110; } // only the room past the table falls into the dark
 }
 function fitHand(){
   if (!handH){ return; }
@@ -984,7 +989,7 @@ function fixtures(dt){ // plaques sink into the rail, the marker and the dealer'
   const e = fixIn;
   plaques.forEach((P, s) => { P.g.visible = e > .01; P.g.position.y = .83 - (1 - e) * 1.5; });
   if (marker){ marker.g.visible = e > .01; marker.g.scale.setScalar(.6 * Math.max(.001, e)); dealerDisc.visible = e > .01; dealerDisc.scale.setScalar(Math.max(.001, e)); }
-  for (const l of seatLines){ l.visible = e > .01; l.material.transparent = true; l.material.opacity = e; }
+  for (const l of seatLines) l.visible = false; // v10: the coloured lines read as guides drawn on the cloth; the grids sit in front of each seat, as at a real table
   return true;
 }
 
@@ -999,7 +1004,7 @@ function applyTheme(th, now){
   M.jade.color.set(cos.back != null ? cos.back : th.back);
   M.rack.map = cos.light ? M.rackMaps.light : M.rackMaps.dark; M.rack.color.set(cos.tint); M.rack.needsUpdate = true;
   lampCol.set(cos.lamp != null ? cos.lamp : th.lamp); spot.color.copy(lampCol); hspot.color.copy(lampCol).lerp(warmCol, warm * .55);
-  scene.background.set(th.room); hemiMain.groundColor.set(th.ground);
+  scene.background.set(th.room); scene.fog.color.set(th.room); hemiMain.groundColor.set(th.ground);
   for (const P of plaques) P.key = '';
   if (S && mode === 'game') sync();
   invalidate();
@@ -1253,7 +1258,7 @@ function pushTo(pi, amt = 1){
   if (reduced()) return;
   const [x, z] = seatXZ(pi, 0, 8); pushX = x * .45; pushZ = z * .45; pushT = amt;
   // on a tall phone the result slip covers the lower table: slide the table up instead of pushing in
-  if (W < 720 && W < H){ pushX = 0; pushZ = pi === 0 ? 13 : pi === 2 ? 3 : 8; pushT = 1; pushZoom = 0; } else pushZoom = .14;
+  if (W < 720 && W < H){ pushX = 0; pushZ = pi === 0 ? 13 : pi === 2 ? 3 : 8; pushT = 1; pushZoom = 0; } else { pushZoom = .14; if (W > H * 1.1) pushX += 5.5; } // v10: the slip sits on the right, so the table slides left and the winning hand stays in view
   wake();
 }
 function nudge(id){ const h = hand.get(id); if (h && h.tgt){ h.rvel.z += 2.4; h.active = true; wake(); } }

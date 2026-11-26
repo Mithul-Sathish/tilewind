@@ -777,9 +777,9 @@ button:focus:not(:focus-visible){outline:none}
 .seattag[hidden]{display:none}
 .seattag.l{left:0;border-radius:0 12px 12px 0}
 .seattag.r{right:0;border-radius:12px 0 0 12px}
-.seattag i{font:400 18px/1 TWbrush;font-style:normal}
+.seattag i{font:400 17px/1 TWbrush;font-style:normal;color:#F4EAD5;width:26px;height:26px;display:grid;place-items:center;border-radius:3px;margin-bottom:2px}
 .seattag b{font:600 15px/1 var(--display)}
-.seattag.on{outline:2px solid #FFE7A8;outline-offset:-2px}
+.seattag.on{box-shadow:inset 0 -4px 0 #A8281E,0 3px 0 rgba(0,0,0,.35)}
 .seattag{pointer-events:auto}
 
 /* ---------- v9: play online ---------- */
@@ -852,6 +852,72 @@ button:focus:not(:focus-visible){outline:none}
 }
 /* v9 short screens (phones on their side): the strip keeps only the two headings with their counts and the footer, so it fits under the buttons */
 @media (max-height:480px){.today{padding:8px 14px;gap:4px 22px}.today ul{display:none}.today .th{border-bottom:0;margin-bottom:0;padding-bottom:0}.today .tfoot{padding-top:6px;margin-top:2px}}
+
+/* ================= v10: quieter, better made =================
+   The v8 buttons were right in shape but loud: thick lips, bright colours, cream discs everywhere.
+   Here the lips are thin, the colours are the lacquer of a real set (oxblood, jade, old gold), and the
+   corner buttons during play are dark and small so the table is what you look at. No gradients. */
+:root{
+  --cream:#EFE4CC; --cream-lip:#B8A27A; --ink2:#24180E;
+  --red:#A8322A; --red-lip:#6A1A14; --jade:#226E55; --jade-lip:#123F30; --gold:#C99A3E; --gold-lip:#7C5C1F; --blue:#2A4C86; --blue-lip:#162B4E;
+  --hair:rgba(239,228,204,.16); --glass:rgba(18,12,7,.78);
+}
+.gb{border-radius:12px;box-shadow:0 3px 0 var(--bl),0 8px 16px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.22);letter-spacing:.01em}
+.gb:active,.gb.press{transform:translateY(2px);box-shadow:0 1px 0 var(--bl),0 3px 6px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.15)}
+.gb.big{border-radius:14px;min-height:64px;font-size:29px;box-shadow:0 4px 0 var(--bl),0 12px 26px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.22)}
+.gb.big:active{transform:translateY(3px);box-shadow:0 1px 0 var(--bl),0 4px 10px rgba(0,0,0,.3)}
+.gb.sm{border-radius:10px;box-shadow:0 2px 0 var(--bl),0 5px 10px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.2)}
+.ib{box-shadow:0 3px 0 var(--bl),0 6px 12px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.3)}
+.ib:active,.ib.press{transform:translateY(2px);box-shadow:0 1px 0 var(--bl)}
+svg.ic{stroke-width:2}
+/* corner buttons on the table: dark, small, a hairline edge */
+#hud .corner .ib,#ctl .ib,#screen-home .corner .ib{--bc:var(--glass);--fc:#EFE4CC;width:44px;height:44px;box-shadow:inset 0 0 0 1px var(--hair),0 4px 12px rgba(0,0,0,.35);backdrop-filter:none}
+#hud .corner .ib svg,#ctl .ib svg,#screen-home .corner .ib svg{width:21px;height:21px}
+#hud .corner .ib:active,#ctl .ib:active,#screen-home .corner .ib:active{transform:scale(.94);box-shadow:inset 0 0 0 1px var(--hair)}
+#hud .corner .ib.off,#screen-home .corner .ib.off{--fc:#8C7F68}
+#ctl .ib.lit{--bc:var(--gold);--fc:#24180E}
+/* the home buttons under Play */
+.ibl{font:600 15px/1 var(--display);color:#EFE4CC;gap:8px}
+.ibl .ib{width:58px;height:58px;--bc:var(--glass);--fc:#EFE4CC;box-shadow:inset 0 0 0 1px rgba(239,228,204,.22),0 6px 14px rgba(0,0,0,.4)}
+.ibl .ib svg{width:26px;height:26px}
+.ibl:active .ib{transform:scale(.94);box-shadow:inset 0 0 0 1px rgba(239,228,204,.22)}
+.ibl .ib.lit{--bc:var(--gold);--fc:#24180E}
+.logo .seal{box-shadow:0 3px 0 var(--red-lip),0 10px 22px rgba(0,0,0,.45);border-radius:.14em}
+.logo .wm{text-shadow:0 2px 0 #1E130A,0 10px 30px rgba(0,0,0,.65)}
+/* pills on the table */
+#coach > span,#ghosts > span{background:var(--glass);box-shadow:inset 0 0 0 1px var(--hair),0 4px 12px rgba(0,0,0,.3)}
+.whyline{background:var(--glass);box-shadow:inset 0 0 0 1px var(--hair)}
+.ontable{background:rgba(18,12,7,.66);box-shadow:inset 0 0 0 1px var(--hair)}
+/* call buttons */
+.call{border-radius:12px;box-shadow:0 3px 0 var(--cream-lip),0 8px 16px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.3)}
+.call.k-win{box-shadow:0 3px 0 var(--red-lip),0 8px 16px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.2)}
+.call.k-pung,.call.k-kong{box-shadow:0 3px 0 var(--gold-lip),0 8px 16px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.25)}
+.call.k-chow{box-shadow:0 3px 0 var(--jade-lip),0 8px 16px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.2)}
+.call:active{transform:translateY(2px)}
+/* paper: menus, books and the result slip */
+.paper{border-radius:14px;box-shadow:0 3px 0 var(--cream-lip),0 24px 60px rgba(0,0,0,.55)}
+.paper .tbtn{border-radius:10px;box-shadow:0 2px 0 var(--cream-lip),inset 0 0 0 1.5px #D3C09A}
+.paper .tbtn.prime{box-shadow:0 2px 0 var(--red-lip),inset 0 1px 0 rgba(255,255,255,.2)}
+.slip{border-radius:16px}
+.shead .seal{border-radius:6px}
+.tabs button{border-radius:9px}
+.card,.sw{border-radius:10px}
+/* the home strip: one quiet line of today, not a dashboard */
+.today{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:min(720px,94vw);padding:12px 20px 13px;border:0;border-radius:12px;background:rgba(14,9,5,.66);box-shadow:inset 0 0 0 1px rgba(239,228,204,.1);width:auto;max-width:94vw;color:#E6DABF;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.today .tfoot2{display:flex;gap:26px;align-items:center;justify-content:center;flex-wrap:wrap}
+.today .run{font:400 15px/1 var(--body);color:#D9CCAE;display:flex;align-items:baseline;gap:6px}
+.today .run b{font:600 26px/1 var(--display);color:#F4EAD5}
+.today .tq{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+.today .tq span{display:flex;align-items:center;gap:7px;font:400 15px/1.2 var(--body);color:#E6DABF}
+.today .tq span i{width:11px;height:11px;border-radius:50%;border:1.5px solid #A8977A;flex:none}
+.today .tq span.done{color:#9C8E74;text-decoration:line-through;text-decoration-color:rgba(156,142,116,.7)}
+.today .tq span.done i{background:var(--red);border-color:var(--red)}
+.today .nu{display:flex;align-items:center;gap:9px;font:400 15px/1 var(--body);color:#D9CCAE}
+.today .nu i{display:block;width:70px;height:4px;border-radius:2px;background:rgba(239,228,204,.18);overflow:hidden}
+.today .nu u{display:block;height:100%;background:var(--gold)}
+/* the result slip: news reads as one quiet list, at most three lines */
+.news > div.more{color:#8A7558;font-style:italic}
+@media (max-width:560px){.today .tq{flex-direction:column;align-items:flex-start;gap:8px}.today{align-items:stretch;padding:14px 18px}.today .tfoot2{justify-content:space-between}}
 
 </style>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
@@ -1380,6 +1446,12 @@ function audio(){
   if (actx) return actx;
   actx = new (window.AudioContext || window.webkitAudioContext)();
   sfxBus = actx.createGain(); sfxBus.connect(actx.destination);
+  try { // v10: a quiet, short room behind the effects
+    const len = Math.floor(actx.sampleRate * .42), ir = actx.createBuffer(2, len, actx.sampleRate);
+    for (let ch = 0; ch < 2; ch++){ const d = ir.getChannelData(ch); let lp = 0; for (let i = 0; i < len; i++){ lp += (Math.random() * 2 - 1 - lp) * .35; d[i] = lp * Math.pow(1 - i / len, 3.2) * (i < actx.sampleRate * .004 ? 0 : 1); } }
+    const cv = actx.createConvolver(); cv.buffer = ir; const wet = actx.createGain(); wet.gain.value = .22;
+    sfxBus.connect(cv).connect(wet).connect(actx.destination);
+  } catch(e){}
   musBus = actx.createGain(); musBus.connect(actx.destination);
   noiseBuf = actx.createBuffer(1, actx.sampleRate * .3, actx.sampleRate);
   const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -1400,16 +1472,28 @@ function snd(kind){
     const ac = audio(); if (ac.state === 'suspended') ac.resume();
     const now = ac.currentTime;
     const clack = (at, freq, vol, thump, thumpVol, decay = .04, q = 2.2) => {
-      const pitch = jit(1, .06), v = jit(vol, .1), t0 = now + at;
+      // v10: a struck tile rings at a few stiff, inharmonic modes for a few hundredths of a second; a filtered-noise
+      // click only gave the hiss. A very short noise tick starts it, the modes carry the "tock", the table gives the thud.
+      const pitch = jit(1, .05), v = jit(vol, .1), t0 = now + at;
       const s = ac.createBufferSource(); s.buffer = noiseBuf; s.playbackRate.value = pitch;
-      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = freq * pitch; bp.Q.value = q;
-      const g = ac.createGain(); g.gain.setValueAtTime(v, t0); g.gain.exponentialRampToValueAtTime(.0006, t0 + decay);
-      s.connect(bp).connect(g).connect(sfxBus); s.start(t0, Math.random() * .1); s.stop(t0 + decay + .02);
-      if (thump){
+      const hp = ac.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = freq * 1.4 * pitch; hp.Q.value = .7;
+      const g = ac.createGain(); g.gain.setValueAtTime(v * .55, t0); g.gain.exponentialRampToValueAtTime(.0005, t0 + .006);
+      s.connect(hp).connect(g).connect(sfxBus); s.start(t0, Math.random() * .2); s.stop(t0 + .012);
+      const f0 = freq * .62 * pitch, modes = [[1, 1, 1], [1.594, .62, .7], [2.136, .42, .5], [2.873, .3, .36], [3.712, .16, .25]];
+      for (const [r, a, dk] of modes){
+        const o = ac.createOscillator(), og = ac.createGain(); o.type = 'sine'; o.frequency.value = f0 * r * jit(1, .012);
+        const d = Math.max(.012, decay * (.9 + q * .1) * dk);
+        og.gain.setValueAtTime(0, t0); og.gain.linearRampToValueAtTime(v * a * .34, t0 + .0012); og.gain.exponentialRampToValueAtTime(.0004, t0 + d);
+        o.connect(og).connect(sfxBus); o.start(t0); o.stop(t0 + d + .01);
+      }
+      if (thump){ // the board under the cloth: a damped low knock, slightly lowpassed noise so it is wood, not a tone
         const o = ac.createOscillator(), og = ac.createGain(); o.type = 'sine';
-        o.frequency.setValueAtTime(thump * pitch * 1.25, t0); o.frequency.exponentialRampToValueAtTime(thump * pitch, t0 + .03);
-        og.gain.setValueAtTime(v * thumpVol, t0); og.gain.exponentialRampToValueAtTime(.0006, t0 + .1);
-        o.connect(og).connect(sfxBus); o.start(t0); o.stop(t0 + .12);
+        o.frequency.setValueAtTime(thump * pitch * 1.35, t0); o.frequency.exponentialRampToValueAtTime(thump * pitch * .9, t0 + .05);
+        og.gain.setValueAtTime(v * thumpVol * .8, t0); og.gain.exponentialRampToValueAtTime(.0005, t0 + .075);
+        o.connect(og).connect(sfxBus); o.start(t0); o.stop(t0 + .09);
+        const n = ac.createBufferSource(); n.buffer = noiseBuf; const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; const ng = ac.createGain();
+        ng.gain.setValueAtTime(v * thumpVol * .5, t0); ng.gain.exponentialRampToValueAtTime(.0005, t0 + .04);
+        n.connect(lp).connect(ng).connect(sfxBus); n.start(t0, Math.random() * .2); n.stop(t0 + .05);
       }
     };
     const slide = (at, dur, vol) => { // a tile drawn across wood
@@ -2033,7 +2117,7 @@ async function buildAtlas(){
   const img = new Image();
   img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${AW}" height="${AH}" viewBox="0 0 ${AW} ${AH}"><style>${FONT_CSS}</style>${cellsF.join('')}</svg>`);
   await img.decode();
-  g.filter = 'saturate(1.35) contrast(1.06)'; g.drawImage(img, 0, 0); g.filter = 'none';
+  g.filter = 'saturate(1.25) contrast(1.06)'; g.drawImage(img, 0, 0); g.filter = 'none';
   atlasBase = document.createElement('canvas'); atlasBase.width = AW; atlasBase.height = AH; atlasBase.getContext('2d').drawImage(c, 0, 0);
   atlasTex = new T3.CanvasTexture(c); atlasTex.colorSpace = T3.SRGBColorSpace; atlasTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   // carving: ink sits slightly below the ivory, with a soft edge
@@ -2054,8 +2138,8 @@ async function buildAtlas(){
   for (let t = 0; t < 31; t++){
     const x = (t % COLS) * CW, y = Math.floor(t / COLS) * CH, txt = t < 27 ? String(t % 9 + 1) : 'ESWN'[t - 27];
     const col = t < 27 ? ['#A3221B', '#1B3566', '#185E31'][Math.floor(t / 9)] : '#1A1A1A';
-    const bw = CW * .36, bh = CH * .28, bx = x + CW * .02, by = y + CH * .018;
-    cells.push(`<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="${CW * .05}" fill="${col}"/><text x="${bx + bw / 2}" y="${by + bh * .8}" text-anchor="middle" fill="#F4ECDA" font-family="TWserif" font-weight="700" font-size="${CW * (t < 27 ? .36 : .3)}">${txt}</text>`);
+    const bx = x + CW * .045, by = y + CH * .035;
+    cells.push(`<text x="${bx}" y="${by + CH * .2}" text-anchor="start" fill="${col}" font-family="TWserif" font-weight="700" font-size="${CW * (t < 27 ? .36 : .3)}">${txt}</text>`);
   }
   helperImg = new Image();
   helperImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${AW}" height="${AH}" viewBox="0 0 ${AW} ${AH}"><style>${FONT_CSS} text{font-variant-numeric:lining-nums;font-feature-settings:"lnum"}</style>${cells.join('')}</svg>`);
@@ -2109,7 +2193,7 @@ function makeMaterials(){
   const rackPale = woodTex([196, 158, 108]); rackPale.repeat.set(.5, 1.4); M.rackMaps = { dark: rackWood, light: rackPale };
   M.rack = new T3.MeshPhysicalMaterial({ color: 0xffffff, map: rackWood, roughness: .4, clearcoat: .6, clearcoatRoughness: .3, envMapIntensity: .45 });
   M.brass = new T3.MeshStandardMaterial({ color: 0xC9A24A, metalness: .9, roughness: .42, roughnessMap: sc, envMapIntensity: 1.1 });
-  const fl = woodTex([26, 20, 16]); fl.repeat.set(12, 26); M.floor = new T3.MeshStandardMaterial({ color: 0xffffff, map: fl, roughness: .9 });
+  const fl = woodTex([46, 32, 22]); fl.repeat.set(16, 34); M.floor = new T3.MeshStandardMaterial({ color: 0xffffff, map: fl, roughness: .9 });
 }
 const BODY_MATS = () => [M.ivory, M.jade, M.seam];
 let woodDark, woodLight;
@@ -2131,7 +2215,7 @@ let spot, hspot, hemiMain, turnSpot, felt, floor, rail, rackGroup, rackBars = []
 const plaques = [], lampCol = new T3.Color(0xFFE2B8), warmCol = new T3.Color(0xFFC98A);
 let marker = null, dealerDisc = null, warm = 0, warmT = 0, turnI = 0, turnIT = 0; const turnPos = new T3.Vector3(0, 0, 9), turnPosT = new T3.Vector3(0, 0, 9);
 const lightsFor = (sc, isHand) => {
-  const key = new T3.SpotLight(0xFFE2B8, isHand ? 6 : 6.6, 0, isHand ? .7 : .5, 1, 0);
+  const key = new T3.SpotLight(0xFFE2B8, isHand ? 6 : 6.6, 0, isHand ? .7 : .6, 1, 0);
   if (isHand){ key.position.set(-7, 10, 16); key.target.position.set(0, 0, 0); }
   else { key.position.set(-11, 36, 13); key.target.position.set(1.2, 0, -.8); }
   key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0003; key.shadow.normalBias = .02; key.shadow.blurSamples = 16;
@@ -2142,7 +2226,7 @@ const lightsFor = (sc, isHand) => {
   return key;
 };
 function buildTable(){
-  scene.background = new T3.Color(0x0b0a08);
+  scene.background = new T3.Color(0x0b0a08); scene.fog = new T3.Fog(0x0b0a08, 70, 150);
   spot = lightsFor(scene, false);
   felt = new T3.Mesh(new T3.PlaneGeometry(26.6, 26.6), M.felt); felt.rotation.x = -Math.PI / 2; felt.receiveShadow = true; scene.add(felt);
   // walnut rail: four boards, grain running along each one
@@ -2200,14 +2284,17 @@ function drawPlaque(s){
   const key = [P.shown, w, portrait, on, theme && theme.id, p.name].join();
   if (P.key === key) return; P.key = key;
   const g = P.c.getContext('2d'), a = SEAT[s];
-  g.fillStyle = a.lac; g.fillRect(0, 0, 1024, 160);
-  g.strokeStyle = a.ink; g.globalAlpha = .5; g.lineWidth = 3; g.strokeRect(10, 10, 1004, 140); g.globalAlpha = 1;
-  g.fillStyle = a.ink; g.textBaseline = 'middle';
-  g.font = "118px TWbrush"; g.textAlign = 'center'; g.fillText(WIND_HAN[w], 92, 84);
-  g.globalAlpha = .5; g.fillRect(170, 30, 3, 100); g.globalAlpha = 1;
-  g.font = "600 86px TWdisplay"; g.textAlign = 'left'; g.fillText(s === 0 ? 'You' : p.name, 200, 86, 470);
-  g.font = "600 124px TWdisplay"; g.textAlign = 'right'; g.fillText(String(P.shown), 994, 88);
-  P.tex.needsUpdate = true; P.mat.emissiveIntensity = on ? .2 : 0;
+  // v10: a bone plate set in brass, lettering cut in and inked, the seat's colour only on a small seal
+  g.fillStyle = '#E6DCC6'; g.fillRect(0, 0, 1024, 160);
+  { const gr = g.createLinearGradient(0, 0, 0, 160); gr.addColorStop(0, 'rgba(255,250,238,.35)'); gr.addColorStop(1, 'rgba(120,96,60,.18)'); g.fillStyle = gr; g.fillRect(0, 0, 1024, 160); }
+  for (let i = 0; i < 70; i++){ g.fillStyle = `rgba(140,112,70,${.025 + rand(i * 3 + s * 211) * .03})`; g.fillRect(0, rand(i * 3 + 1 + s * 211) * 160, 1024, 1 + rand(i * 3 + 2 + s * 211) * 2); } // fixed grain: never draws on the game's random numbers
+  g.fillStyle = a.lac; g.fillRect(14, 14, 132, 132);
+  g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(14, 140, 132, 6);
+  g.fillStyle = '#F4EAD5'; g.textBaseline = 'middle'; g.font = "104px TWbrush"; g.textAlign = 'center'; g.fillText(WIND_HAN[w], 80, 84);
+  g.fillStyle = '#1A130C'; g.font = "600 80px TWdisplay"; g.textAlign = 'left'; g.fillText(s === 0 ? 'You' : p.name, 180, 86, 440);
+  g.font = "600 112px TWdisplay"; g.textAlign = 'right'; g.fillText(String(P.shown), 1000, 88);
+  if (on){ g.fillStyle = a.lac; g.fillRect(180, 138, 300, 8); }
+  P.tex.needsUpdate = true; P.mat.emissiveIntensity = on ? .12 : 0;
 }
 function drawMarker(force){
   const left = S.wall.length, key = [S.roundWind, S.handNo, S.totalHands, left, S.mode].join();
@@ -2404,11 +2491,12 @@ function placeCam(c, R, tx, tz, ox = 0, oz = 0, tilt = cv.tilt){ c.position.set(
    side players' hidden tiles fall outside the frame); a wide screen shows the whole table; table view looks straight down. */
 function frameBox(aspect){ // in table view a phone zooms onto the four discard grids
   const portrait = aspect < .9;
-  if (mode !== 'game') return { x: 14.7, z0: -14.7, z1: 14.7, frac: portrait ? .99 : .8, tilt: portrait ? 15 : aspect > 1.9 ? 27 : 21 };
+  if (mode !== 'game') return { x: 14.7, z0: -14.7, z1: 14.7, frac: portrait ? 1.32 : .84, tilt: portrait ? 30 : aspect > 1.9 ? 40 : 36 }; // a phone: the table runs off the sides, so it fills the screen behind the title
   if (S && S.mode === 'lesson') return portrait ? { x: 7.6, z0: -13.5, z1: 10, frac: 1, tilt: 9 } : { x: 10.5, z0: -11, z1: 10, frac: .96, tilt: 16 };
   if (tableView) return portrait ? { x: 7.75, z0: -7.75, z1: 7.75, frac: 1, tilt: .5 } : { x: 10.2, z0: -10.2, z1: 10.2, frac: .98, tilt: .5 };
   if (portrait) return { x: 9.75, z0: -15.6, z1: 11.4, frac: 1, tilt: 13 };
-  return { x: 14.7, z0: -14.7, z1: 14.7, frac: .97, tilt: aspect > 1.9 ? 27 : 21 };
+  if (aspect > 2.2) return { x: 13.6, z0: -12.6, z1: 14.7, frac: 1, tilt: 47 }; // a sideways phone: lower still, so the table uses the width
+  return { x: 14.3, z0: -13.6, z1: 14.9, frac: 1, tilt: aspect > 1.9 ? 38 : 33 }; // v10: lower and closer, like a photograph taken from a chair
 }
 function fitCamera(snapNow = true){
   const vh = Math.max(1, H - handH - stripH), aspect = W / vh, b = frameBox(aspect);
@@ -2451,10 +2539,11 @@ function lookChanged(){ if (typeof onLook === 'function') onLook(lookAway(), loo
 function updateCam(){
   const g = mode === 'game';
   const R = cv.R * (1 - pushZoom * push) * (g ? look.zoom : 1), tilt = cv.tilt + (g ? look.tilt : 0), yaw = g ? look.yaw : 0;
-  const tx = cv.tx + pushX * push + (g ? look.px : 0), tz = cv.tz + pushZ * push + (mode === 'home' ? (W < H ? 6 : 2.4) : 0) + (g ? look.pz : 0);
+  const tx = cv.tx + pushX * push + (g ? look.px : 0), tz = cv.tz + pushZ * push + (mode === 'home' ? (W < H ? 3.5 : 2.4) : 0) + (g ? look.pz : 0);
   const oz = R * Math.sin(tilt);
   cam.position.set(tx + oz * Math.sin(yaw) + par.x, R * Math.cos(tilt), tz + oz * Math.cos(yaw) + par.z);
   cam.lookAt(tx, 0, tz); cam.updateMatrixWorld();
+  if (scene.fog){ scene.fog.near = R + 22; scene.fog.far = R + 110; } // only the room past the table falls into the dark
 }
 function fitHand(){
   if (!handH){ return; }
@@ -2871,7 +2960,7 @@ function fixtures(dt){ // plaques sink into the rail, the marker and the dealer'
   const e = fixIn;
   plaques.forEach((P, s) => { P.g.visible = e > .01; P.g.position.y = .83 - (1 - e) * 1.5; });
   if (marker){ marker.g.visible = e > .01; marker.g.scale.setScalar(.6 * Math.max(.001, e)); dealerDisc.visible = e > .01; dealerDisc.scale.setScalar(Math.max(.001, e)); }
-  for (const l of seatLines){ l.visible = e > .01; l.material.transparent = true; l.material.opacity = e; }
+  for (const l of seatLines) l.visible = false; // v10: the coloured lines read as guides drawn on the cloth; the grids sit in front of each seat, as at a real table
   return true;
 }
 
@@ -2886,7 +2975,7 @@ function applyTheme(th, now){
   M.jade.color.set(cos.back != null ? cos.back : th.back);
   M.rack.map = cos.light ? M.rackMaps.light : M.rackMaps.dark; M.rack.color.set(cos.tint); M.rack.needsUpdate = true;
   lampCol.set(cos.lamp != null ? cos.lamp : th.lamp); spot.color.copy(lampCol); hspot.color.copy(lampCol).lerp(warmCol, warm * .55);
-  scene.background.set(th.room); hemiMain.groundColor.set(th.ground);
+  scene.background.set(th.room); scene.fog.color.set(th.room); hemiMain.groundColor.set(th.ground);
   for (const P of plaques) P.key = '';
   if (S && mode === 'game') sync();
   invalidate();
@@ -3140,7 +3229,7 @@ function pushTo(pi, amt = 1){
   if (reduced()) return;
   const [x, z] = seatXZ(pi, 0, 8); pushX = x * .45; pushZ = z * .45; pushT = amt;
   // on a tall phone the result slip covers the lower table: slide the table up instead of pushing in
-  if (W < 720 && W < H){ pushX = 0; pushZ = pi === 0 ? 13 : pi === 2 ? 3 : 8; pushT = 1; pushZoom = 0; } else pushZoom = .14;
+  if (W < 720 && W < H){ pushX = 0; pushZ = pi === 0 ? 13 : pi === 2 ? 3 : 8; pushT = 1; pushZoom = 0; } else { pushZoom = .14; if (W > H * 1.1) pushX += 5.5; } // v10: the slip sits on the right, so the table slides left and the winning hand stays in view
   wake();
 }
 function nudge(id){ const h = hand.get(id); if (h && h.tgt){ h.rvel.z += 2.4; h.active = true; wake(); } }
@@ -3808,7 +3897,10 @@ function resultSlip(w, parts, x){
   const rank = net ? '' : `<div class="rank"><span class="rseal">${ri.seal}</span><div><div class="rname">${ri.name}<small>${ri.next ? `${ri.into} of ${ri.need} to ${ri.next}` : 'Top rank'}</small></div><div class="bar"><i style="width:${Math.round(ri.frac * 100)}%"></i></div></div><span class="rgain">+${w.gain}</span></div>`;
   let stand = '';
   if (x.last && S.totalHands > 1) stand = `<div class="stand"><div class="sth">${['', '1st place', '2nd place', '3rd place', '4th place'][x.place]}</div>${x.order.map((o, k) => { const i = o.i, sc = o.score != null ? o.score : o.p.score; return `<div class="${i === 0 ? 'me' : ''}"><span>${k + 1}</span><span><i style="background:${SEAT[i].lac}"></i>${S.players[i].name}</span><b>${sc}</b></div>`; }).join('')}</div>`;
-  const news = (x.dailyLine ? [x.dailyLine] : []).concat(w.news).map(n => `<div>${n}</div>`).join('');
+  const allNews = (x.dailyLine ? [x.dailyLine] : []).concat(w.news), stampN = allNews.filter(n => /^New stamp in your Collection/.test(n)).length;
+  // v10: several stamps at once read as one line, and the list never runs past three lines
+  const newsL = stampN > 1 ? [`${stampN} new stamps in your Collection.`].concat(allNews.filter(n => !/^New stamp in your Collection/.test(n))) : allNews;
+  const news = newsL.slice(0, 3).map(n => `<div>${n}</div>`).join('') + (newsL.length > 3 ? `<div class="more">and ${newsL.length - 3} more in your Collection</div>` : '');
   let btns;
   const onl = net && NET.online;
   if (onl && x.last) btns = `<button class="tbtn" data-r="home">Home</button><button class="tbtn prime big" data-r="online">Play again</button>`;
@@ -4708,10 +4800,10 @@ function todayStrip(){
   const qs = todaysQuests(), wk = weekGoals(), run = dayRun(), nu = nextUnlock();
   const qd = qs.filter(q => profile.quests.done[q.id]).length, wd = wk.filter(g => profile.week.done[g.id]).length;
   const goal = (txt, done, prog) => `<li class="${done ? 'done' : ''}"><i></i><span>${txt}</span>${prog ? `<small>${prog}</small>` : ''}</li>`;
+  // v10: one line. Today's three goals, the run of days, the next thing to earn. The week lives in Collection > Today.
   return `<div class="today" style="--i:4">
-    <div class="tcol"><div class="th"><b>Today</b><small>${qd} of 3</small></div><ul>${qs.map(q => goal(q.text, profile.quests.done[q.id])).join('')}</ul></div>
-    <div class="tcol"><div class="th"><b>This week</b><small>${wd} of 3</small></div><ul>${wk.map(g => goal(g.text(), profile.week.done[g.id], profile.week.done[g.id] ? '' : `${profile.week.prog[g.id] || 0}/${g.need}`)).join('')}</ul></div>
-    <div class="tfoot">${run >= 1 ? `<span class="run"><b>${run}</b> day${run > 1 ? 's' : ''} in a row</span>` : '<span class="run">Play a hand to start a run of days</span>'}${nu ? `<span class="nu">Next: ${nu.name}<i><u style="width:${Math.round(nu.frac * 100)}%"></u></i></span>` : ''}</div>
+    <span class="tq">${qs.map(q => `<span class="${profile.quests.done[q.id] ? 'done' : ''}"><i></i>${q.text}</span>`).join('')}</span>
+    <span class="tfoot2">${run >= 1 ? `<span class="run"><b>${run}</b> day${run > 1 ? 's' : ''} in a row</span>` : ''}${nu ? `<span class="nu">Next: ${nu.name}<i><u style="width:${Math.round(nu.frac * 100)}%"></u></i></span>` : ''}</span>
   </div>`;
 }
 /* =========================================================
@@ -5874,7 +5966,7 @@ function placeSeatTags(){
     if (!off){ el.hidden = true; continue; }
     el.hidden = false; const pl = S.players[s], w = (s - S.dealer + 4) % 4;
     const key = [pl.name, pl.score, w, S.turn === s].join();
-    if (el._k !== key){ el._k = key; el.innerHTML = `<i>${WIND_HAN[w]}</i><span>${pl.name}</span><b>${pl.score}</b>`; el.style.background = SEAT[s].lac; el.style.color = SEAT[s].ink; el.classList.toggle('on', S.turn === s); }
+    if (el._k !== key){ el._k = key; el.innerHTML = `<i style="background:${SEAT[s].lac}">${WIND_HAN[w]}</i><span>${pl.name}</span><b>${pl.score}</b>`; el.style.background = '#E6DCC6'; el.style.color = '#1E160E'; el.classList.toggle('on', S.turn === s); }
     el.style.top = Math.max(80, Math.min(innerHeight * .6, p.y)) + 'px';
   }
 }
@@ -5930,5 +6022,4 @@ window.TW_autotest = (matches = 3) => new Promise(async res => {
 });
 })();
 </script>
-
 </body></html>

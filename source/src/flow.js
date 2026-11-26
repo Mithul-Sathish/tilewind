@@ -641,7 +641,10 @@ function resultSlip(w, parts, x){
   const rank = net ? '' : `<div class="rank"><span class="rseal">${ri.seal}</span><div><div class="rname">${ri.name}<small>${ri.next ? `${ri.into} of ${ri.need} to ${ri.next}` : 'Top rank'}</small></div><div class="bar"><i style="width:${Math.round(ri.frac * 100)}%"></i></div></div><span class="rgain">+${w.gain}</span></div>`;
   let stand = '';
   if (x.last && S.totalHands > 1) stand = `<div class="stand"><div class="sth">${['', '1st place', '2nd place', '3rd place', '4th place'][x.place]}</div>${x.order.map((o, k) => { const i = o.i, sc = o.score != null ? o.score : o.p.score; return `<div class="${i === 0 ? 'me' : ''}"><span>${k + 1}</span><span><i style="background:${SEAT[i].lac}"></i>${S.players[i].name}</span><b>${sc}</b></div>`; }).join('')}</div>`;
-  const news = (x.dailyLine ? [x.dailyLine] : []).concat(w.news).map(n => `<div>${n}</div>`).join('');
+  const allNews = (x.dailyLine ? [x.dailyLine] : []).concat(w.news), stampN = allNews.filter(n => /^New stamp in your Collection/.test(n)).length;
+  // v10: several stamps at once read as one line, and the list never runs past three lines
+  const newsL = stampN > 1 ? [`${stampN} new stamps in your Collection.`].concat(allNews.filter(n => !/^New stamp in your Collection/.test(n))) : allNews;
+  const news = newsL.slice(0, 3).map(n => `<div>${n}</div>`).join('') + (newsL.length > 3 ? `<div class="more">and ${newsL.length - 3} more in your Collection</div>` : '');
   let btns;
   const onl = net && NET.online;
   if (onl && x.last) btns = `<button class="tbtn" data-r="home">Home</button><button class="tbtn prime big" data-r="online">Play again</button>`;

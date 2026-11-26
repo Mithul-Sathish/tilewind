@@ -57,9 +57,9 @@ function todayStrip(){
   const qs = todaysQuests(), wk = weekGoals(), run = dayRun(), nu = nextUnlock();
   const qd = qs.filter(q => profile.quests.done[q.id]).length, wd = wk.filter(g => profile.week.done[g.id]).length;
   const goal = (txt, done, prog) => `<li class="${done ? 'done' : ''}"><i></i><span>${txt}</span>${prog ? `<small>${prog}</small>` : ''}</li>`;
+  // v10: one line. Today's three goals, the run of days, the next thing to earn. The week lives in Collection > Today.
   return `<div class="today" style="--i:4">
-    <div class="tcol"><div class="th"><b>Today</b><small>${qd} of 3</small></div><ul>${qs.map(q => goal(q.text, profile.quests.done[q.id])).join('')}</ul></div>
-    <div class="tcol"><div class="th"><b>This week</b><small>${wd} of 3</small></div><ul>${wk.map(g => goal(g.text(), profile.week.done[g.id], profile.week.done[g.id] ? '' : `${profile.week.prog[g.id] || 0}/${g.need}`)).join('')}</ul></div>
-    <div class="tfoot">${run >= 1 ? `<span class="run"><b>${run}</b> day${run > 1 ? 's' : ''} in a row</span>` : '<span class="run">Play a hand to start a run of days</span>'}${nu ? `<span class="nu">Next: ${nu.name}<i><u style="width:${Math.round(nu.frac * 100)}%"></u></i></span>` : ''}</div>
+    <span class="tq">${qs.map(q => `<span class="${profile.quests.done[q.id] ? 'done' : ''}"><i></i>${q.text}</span>`).join('')}</span>
+    <span class="tfoot2">${run >= 1 ? `<span class="run"><b>${run}</b> day${run > 1 ? 's' : ''} in a row</span>` : ''}${nu ? `<span class="nu">Next: ${nu.name}<i><u style="width:${Math.round(nu.frac * 100)}%"></u></i></span>` : ''}</span>
   </div>`;
 }
