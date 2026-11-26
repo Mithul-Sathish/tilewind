@@ -400,13 +400,23 @@ function aiRecommend(o, tile){
   for (const s of o.chows){ const need = [s,s+1,s+2].filter(x => x !== tile); if (bestAfterClaim(0, need, 1) < cur) return { type:'chow', start:s }; }
   return null;
 }
+/* v10: the suggestion says why, in a few words, so a new player learns the idea and not only the tile */
+function tipWhy(t){
+  const hs = S.players[0].hand.map(x => x.t).filter(x => x >= 0 && x < 34), n = k => hs.filter(x => x === k).length;
+  if (n(t) >= 2) return '';
+  if (t >= 27) return ', a lone honor';
+  const r = t % 9, near = d => r + d >= 0 && r + d <= 8 && n(t + d) > 0;
+  if (!near(-2) && !near(-1) && !near(1) && !near(2)) return ', nothing near it';
+  if ((r === 0 || r === 8) && !near(r === 0 ? 1 : -1)) return ', an end tile';
+  return '';
+}
 function coachForTurn(so){
   if (so.win) return 'You can win!';
   const cands = analyzeDiscards(0, { defend: S.diff >= 1 });
   S.ui_tip = cands[0] ? cands[0].t : null;
   if (settings.coach < 2 || !cands[0]) return 'Your turn';
   if (cands[0].sh === 0) return `Throw ${tileHTML(cands[0].t)} to be one away`;
-  return `Try ${tileHTML(cands[0].t)}`;
+  return `Try ${tileHTML(cands[0].t)}${tipWhy(cands[0].t)}`;
 }
 function stepsToWin(){
   const me = S.players[0], c = countsOf(me.hand), mc = me.melds.length;
@@ -451,7 +461,7 @@ function hint(){
   if (!S || !S.ui) return;
   if (S.ui.mode === 'discard'){
     const c = analyzeDiscards(0, { defend: S.diff >= 1 })[0]; if (!c) return;
-    S.hintId = pickDiscardTile(0, c.t); say(`Try ${tileHTML(c.t)}`, 2600);
+    S.hintId = pickDiscardTile(0, c.t); say(`Try ${tileHTML(c.t)}${tipWhy(c.t)}`, 2600);
     setTimeout(() => { if (S && S.hintId){ S.hintId = null; render(); } }, 2600);
   } else if (S.ui.mode === 'claim'){ S.showRec = true; render(); }
 }
@@ -576,7 +586,7 @@ async function finishHand(w){
   if (S.mode !== 'tut' && S.mode !== 'net'){ recordHand(w, parts); save(); }
   if (S.mode === 'net' && last){ order = S.players.map((p, i) => ({ p, i })).sort((a, b) => b.p.score - a.p.score); place = order.findIndex(o => o.i === 0) + 1; }
   render();
-  if (win){ fpsStart('win'); setTimeout(() => fpsStop('win'), 5200); V.pushTo(w.pi, big ? 1 : .55); snd(mine ? (big ? 'bigwin' : 'win') : 'lose'); haptic(mine ? [20, 60, 20, 60, 40] : 12); callStroke(w.pi, 'win', big ? 1500 : 1000); }
+  if (win){ fpsStart('win'); setTimeout(() => fpsStop('win'), 5200); V.pushTo(w.pi, big ? 1 : .55); if (mine) setTimeout(() => V.thump(0, true), 120); snd(mine ? (big ? 'bigwin' : 'win') : 'lose'); haptic(mine ? [20, 60, 20, 60, 40] : 12); callStroke(w.pi, 'win', big ? 1500 : 1000); } // v10: the lamp swells once for your win
   await sleep(win ? 520 : 400);
   if (mine && S.rare && S.rare.length){ const rr = S.rare; S.rare = null; for (const c of rr) await rareReveal(c); }
   const x = { last, big, place, order, dailyLine };

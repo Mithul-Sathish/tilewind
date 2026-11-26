@@ -323,7 +323,7 @@ function drawPlaque(s){
   g.fillStyle = '#1A130C'; g.font = "600 80px TWdisplay"; g.textAlign = 'left'; g.fillText(s === 0 ? 'You' : p.name, 180, 86, 440);
   g.font = "600 112px TWdisplay"; g.textAlign = 'right'; g.fillText(String(P.shown), 1000, 88);
   if (on){ g.fillStyle = a.lac; g.fillRect(180, 138, 300, 8); }
-  P.tex.needsUpdate = true; P.mat.emissiveIntensity = on ? .12 : 0;
+  P.tex.needsUpdate = true; P.mat.emissiveIntensity = on ? .17 : .07; // a touch of self-light so the far plaque still reads
 }
 function drawMarker(force){
   const left = S.wall.length, key = [S.roundWind, S.handNo, S.totalHands, left, S.mode].join();
@@ -344,6 +344,7 @@ function buildRack(){
   hspot = lightsFor(hscene, true);
   rackGroup = new T3.Group(); hscene.add(rackGroup);
   const ledge = new T3.Mesh(roundedBox(60, .6, 9, 2, .12), M.walnut); ledge.position.set(0, -.3, 2.1); ledge.receiveShadow = true; hscene.add(ledge); rackLedge = ledge;
+  { const uv = ledge.geometry.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * .1 + 1.25); uv.needsUpdate = true; } // v10: the grain no longer wraps, so no seam down the middle of the board (edited in place: no new objects)
   tipDot = new T3.Mesh(new T3.CylinderGeometry(.075, .075, .03, 20), M.brass); tipDot.visible = false; hscene.add(tipDot);
 }
 function rackBar(len){
@@ -513,7 +514,7 @@ function step(o, dt){
 }
 
 /* ---------- camera ---------- */
-let pushZoom = .14, push = 0, pushV = 0, pushT = 0, pushX = 0, pushZ = 0, tableView = false;
+let playX = 9.75, pushZoom = .14, push = 0, pushV = 0, pushT = 0, pushX = 0, pushZ = 0, tableView = false;
 const cv = { R: 70, tilt: 20 * DEG, tx: 0, tz: 0 }, ct = { R: 70, tilt: 20 * DEG, tx: 0, tz: 0 }, cvV = { R: 0, tilt: 0, tx: 0, tz: 0 };
 function placeCam(c, R, tx, tz, ox = 0, oz = 0, tilt = cv.tilt){ c.position.set(tx + ox, R * Math.cos(tilt), tz + R * Math.sin(tilt) + oz); c.lookAt(tx, 0, tz); c.updateMatrixWorld(); }
 /* what the camera must show. A tall phone frames the discards and melds edge to edge (the side walls and the
@@ -523,7 +524,7 @@ function frameBox(aspect){ // in table view a phone zooms onto the four discard 
   if (mode !== 'game') return { x: 14.7, z0: -14.7, z1: 14.7, frac: portrait ? 1.32 : .84, tilt: portrait ? 30 : aspect > 1.9 ? 40 : 36 }; // a phone: the table runs off the sides, so it fills the screen behind the title
   if (S && S.mode === 'lesson') return portrait ? { x: 7.6, z0: -13.5, z1: 10, frac: 1, tilt: 9 } : { x: 10.5, z0: -11, z1: 10, frac: .96, tilt: 16 };
   if (tableView) return portrait ? { x: 7.75, z0: -7.75, z1: 7.75, frac: 1, tilt: .5 } : { x: 10.2, z0: -10.2, z1: 10.2, frac: .98, tilt: .5 };
-  if (portrait) return { x: 9.75, z0: -15.6, z1: 11.4, frac: 1, tilt: 13 };
+  if (portrait) return { x: playX, z0: -15.6, z1: 11.4, frac: 1, tilt: 13 }; // v10: as wide as the played tiles reach (7.2 to 9.75), so early tiles read bigger
   if (aspect > 2.2) return { x: 13.6, z0: -12.6, z1: 14.7, frac: 1, tilt: 47 }; // a sideways phone: lower still, so the table uses the width
   return { x: 14.3, z0: -13.6, z1: 14.9, frac: 1, tilt: aspect > 1.9 ? 38 : 33 }; // v10: lower and closer, like a photograph taken from a chair
 }
@@ -794,6 +795,7 @@ function sync(){
     }
   }
   const dealing = dealPhase === 2 || dealPhase === 3;
+  let xNeed = 0; const reach = (ps, pad) => { xNeed = Math.max(xNeed, Math.abs(ps.x) + pad); return ps; };
   if (dealPhase !== 1 && dealPhase !== 'wash'){
     S.players.forEach((p, pi) => {
       const winner = S.turn === -1 && S.reveal === pi;
@@ -833,22 +835,23 @@ function sync(){
         m.tiles.forEach((x, i) => {
           const w = TW * MS, down = m.concealed && m.type === 'kong' && (i === 0 || i === 3), lead = m.claimed === x.id;
           const wt = !isNew || rm ? 0 : lead ? 0 : .14 + i * .045;
-          want.set(x.id, { where: 'main', arc: true, wait: wt, snd: isNew ? (i === lastI ? (m.type === 'chow' ? 'chow' : m.type === 'kong' ? 'kong' : 'pung') : null) : 'place', pose: pose(pi, cur - w / 2, MV + (lead ? .1 : 0), LIE * MS, down ? DOWN : 0, 0, MS, x.id) });
+          want.set(x.id, { where: 'main', arc: true, wait: wt, snd: isNew ? (i === lastI ? (m.type === 'chow' ? 'chow' : m.type === 'kong' ? 'kong' : 'pung') : null) : 'place', pose: pi % 2 ? pose(pi, cur - w / 2, MV + (lead ? .1 : 0), LIE * MS, down ? DOWN : 0, 0, MS, x.id) : reach(pose(pi, cur - w / 2, MV + (lead ? .1 : 0), LIE * MS, down ? DOWN : 0, 0, MS, x.id), .7) });
           cur -= w + .03;
         });
         cur -= .2;
       });
       lastMeldKey.set(pi + ':n', true);
       let fc = MB0; const fsc = .9;
-      for (const f of p.flowers){ want.set(f.id, { where: 'main', arc: true, snd: 'place', wait: dealPhase === 2 ? dwait(f.id) : 0, pose: pose(pi, fc + TW * fsc / 2, MV, LIE * fsc, 0, 0, fsc, f.id) }); fc += TW * fsc + .04; }
+      for (const f of p.flowers){ want.set(f.id, { where: 'main', arc: true, snd: 'place', wait: dealPhase === 2 ? dwait(f.id) : 0, pose: pi % 2 ? pose(pi, fc + TW * fsc / 2, MV, LIE * fsc, 0, 0, fsc, f.id) : reach(pose(pi, fc + TW * fsc / 2, MV, LIE * fsc, 0, 0, fsc, f.id), .7) }); fc += TW * fsc + .04; }
       // discards: a grid of six per row, in the order thrown. A throw comes down short and slides the last bit
       p.discards.forEach((d, i) => {
         const sl = discardSlot(i, p.discards.length);
         const lifted = S.ui && S.ui.mode === 'claim' && S.lastDiscard && S.lastDiscard.id === d.id;
-        want.set(d.id, { where: 'main', arc: true, slide: true, snd: 'place', pose: pose(pi, sl.u, sl.v, LIE * sl.s + (lifted ? .34 : 0), 0, 0, sl.s, d.id) });
+        want.set(d.id, { where: 'main', arc: true, slide: true, snd: 'place', pose: reach(pose(pi, sl.u, sl.v, LIE * sl.s + (lifted ? .34 : 0), 0, 0, sl.s, d.id), .9) });
       });
     });
   }
+  if (!lesson && dealPhase !== 1 && dealPhase !== 'wash'){ const nx = Math.min(9.75, Math.max(7.2, xNeed)); if (Math.abs(nx - playX) > .25 || (fresh && nx !== playX)){ playX = nx; if (narrow) fitCamera(false); } }
   // the lesson lays loose tiles straight onto the cloth; every other tile waits in the wall around the table
   if (S.lay && dealPhase !== 'wash'){
     for (const L of S.lay){ want.set(L.id, { where: 'main', arc: true, snd: L.snd === undefined ? 'place' : L.snd, pose: { x: L.x, y: LIE * (L.s || 1) + (L.lift || 0), z: L.z, rx: L.down ? DOWN : 0, ry: L.ry || 0, rz: 0, sc: L.s || 1 } }); }
