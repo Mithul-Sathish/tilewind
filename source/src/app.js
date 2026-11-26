@@ -227,7 +227,8 @@ function renderRecent(){
 }
 function placeFollowers(){
   const nw = $('#newest'); if (!nw) return;
-  const n = S && S.newest && S.turn !== -1 ? S.newest : null;
+  let n = S && S.newest && S.turn !== -1 ? S.newest : null;
+  if (n && !S.claimWin && V.tilePx(n.id) >= 26) n = null; // v11: a throw you can read on the table is not copied over it; the copy comes back when it can be claimed or the table is small
   if (!n){ if (!nw.hidden){ fadeHide(nw, 160); nw._k = ''; } return; }
   const px = V.tilePx(n.id), w = Math.round(Math.max(44, Math.min(70, px * 1.55))), k = n.id + ':' + w + ':' + !!S.claimWin + settings.helpers;
   if (nw._k !== k){

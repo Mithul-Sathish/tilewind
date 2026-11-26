@@ -38,7 +38,7 @@ pressSounds($('#screen-game'));
 /* labels that belong to the table */
 function placeTags(){
   const wt = $('#wallTag'); if (!wt) return;
-  const show = S && S.turn !== -1 && S.mode !== 'lesson' && S.wall && S.wall.length > 0 && !V.dealing();
+  const show = false && S && S.turn !== -1 // v11: the count lives on the marker at the centre && S.mode !== 'lesson' && S.wall && S.wall.length > 0 && !V.dealing();
   const p = show ? V.wallXY() : null;
   if (!p || p.y > innerHeight - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--handH')) || 0) - 30){ wt.hidden = true; }
   else {
@@ -58,7 +58,7 @@ function placeSeatTags(){
     if (!off){ el.hidden = true; continue; }
     el.hidden = false; const pl = S.players[s], w = (s - S.dealer + 4) % 4;
     const key = [pl.name, pl.score, w, S.turn === s].join();
-    if (el._k !== key){ el._k = key; el.innerHTML = `<i style="background:${SEAT[s].lac}">${WIND_HAN[w]}</i><span>${pl.name}</span><b>${pl.score}</b>`; el.style.background = '#E6DCC6'; el.style.color = '#1E160E'; el.classList.toggle('on', S.turn === s); }
+    if (el._k !== key){ el._k = key; el.innerHTML = `<i style="background:${SEAT[s].lac}">${WIND_HAN[w]}</i><span>${pl.name}</span><b>${pl.score}</b>`; el.style.background = '#16110D'; el.style.color = '#CFAE66'; el.classList.toggle('on', S.turn === s); }
     el.style.top = Math.max(80, Math.min(innerHeight * .6, p.y)) + 'px';
   }
 }

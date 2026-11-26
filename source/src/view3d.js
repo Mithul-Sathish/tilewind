@@ -201,7 +201,7 @@ const M = {};
 function makeMaterials(){
   const sc = scratchTex(); sc.repeat.set(3, 3);
   M.ivory = new T3.MeshPhysicalMaterial({ color: 0xEFE6D2, roughness: .42, roughnessMap: sc, clearcoat: .38, clearcoatRoughness: .26, clearcoatRoughnessMap: sc, envMapIntensity: .6, specularIntensity: .55, sheen: .35, sheenColor: new T3.Color(0xE8B98A), sheenRoughness: .5 });
-  M.jade = new T3.MeshPhysicalMaterial({ color: 0x2C6B4F, roughness: .36, roughnessMap: sc, clearcoat: .8, clearcoatRoughness: .2, clearcoatRoughnessMap: sc, envMapIntensity: .8 });
+  M.jade = new T3.MeshPhysicalMaterial({ color: 0x1d4734, roughness: .36, roughnessMap: sc, clearcoat: .9, clearcoatRoughness: .2, clearcoatRoughnessMap: sc, envMapIntensity: .35 });
   M.seam = new T3.MeshStandardMaterial({ color: 0x1a1d18, roughness: .85 });
   M.face = new T3.MeshPhysicalMaterial({ color: 0xffffff, map: atlasTex, bumpMap: bumpTex, bumpScale: 2.2, roughness: .35, clearcoat: .5, clearcoatRoughness: .3, envMapIntensity: .55, specularIntensity: .55, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   M.rim = new T3.MeshBasicMaterial({ color: 0xD9AE55, side: T3.BackSide });
@@ -211,7 +211,7 @@ function makeMaterials(){
   M.shadow.map.wrapS = M.shadow.map.wrapT = T3.ClampToEdgeWrapping;
   const fn = feltNormal(); fn.repeat.set(7, 7);
   const fc = feltColor(); fc.repeat.set(1, 1);
-  M.felt = new T3.MeshPhysicalMaterial({ color: 0x1D4636, map: fc, roughness: 1, sheen: 1, sheenColor: new T3.Color(0x5a9a78), sheenRoughness: .48, normalMap: fn, normalScale: new T3.Vector2(.7, .7), envMapIntensity: .12 });
+  M.felt = new T3.MeshPhysicalMaterial({ color: 0x1D4636, map: fc, roughness: 1, sheen: 1, sheenColor: new T3.Color(0x5a9a78), sheenRoughness: .48, normalMap: fn, normalScale: new T3.Vector2(1.1, 1.1), envMapIntensity: .12 });
   const wood = woodTex([74, 44, 26]); wood.repeat.set(.4, .5); woodDark = wood;
   woodLight = woodTex([150, 108, 66]); woodLight.repeat.set(.4, .5);
   M.bone = new T3.MeshPhysicalMaterial({ color: 0xE9DFC8, roughness: .45, clearcoat: .3, clearcoatRoughness: .4, envMapIntensity: .4 });
@@ -222,7 +222,7 @@ function makeMaterials(){
   const rackPale = woodTex([196, 158, 108]); rackPale.repeat.set(.5, 1.4); M.rackMaps = { dark: rackWood, light: rackPale };
   M.rack = new T3.MeshPhysicalMaterial({ color: 0xffffff, map: rackWood, roughness: .4, clearcoat: .6, clearcoatRoughness: .3, envMapIntensity: .45 });
   M.brass = new T3.MeshStandardMaterial({ color: 0xC9A24A, metalness: .9, roughness: .42, roughnessMap: sc, envMapIntensity: 1.1 });
-  const fl = woodTex([46, 32, 22]); fl.repeat.set(16, 34); M.floor = new T3.MeshStandardMaterial({ color: 0xffffff, map: fl, roughness: .9 });
+  const fl = woodTex([46, 32, 22]); fl.repeat.set(16, 34); M.floor = new T3.MeshStandardMaterial({ color: 0x5a5048, map: fl, roughness: .9 });
 }
 const BODY_MATS = () => [M.ivory, M.jade, M.seam];
 let woodDark, woodLight;
@@ -243,15 +243,16 @@ const seatLines = [];
 let spot, hspot, hemiMain, turnSpot, felt, floor, rail, rackGroup, rackBars = [], tipDot, rackLedge;
 const plaques = [], lampCol = new T3.Color(0xFFE2B8), warmCol = new T3.Color(0xFFC98A);
 let marker = null, dealerDisc = null, warm = 0, warmT = 0, turnI = 0, turnIT = 0; const turnPos = new T3.Vector3(0, 0, 9), turnPosT = new T3.Vector3(0, 0, 9);
+const KEY_T = 11.5, KEY_H = 5;
 const lightsFor = (sc, isHand) => {
-  const key = new T3.SpotLight(0xFFE2B8, isHand ? 6 : 6.6, 0, isHand ? .7 : .6, 1, 0);
+  const key = new T3.SpotLight(0xFFE2B8, isHand ? KEY_H : KEY_T, 0, isHand ? .7 : .46, isHand ? 1 : .85, 0); // v11: one lamp over the table, the rail and room fall away into the dark
   if (isHand){ key.position.set(-7, 10, 16); key.target.position.set(0, 0, 0); }
-  else { key.position.set(-11, 36, 13); key.target.position.set(1.2, 0, -.8); }
+  else { key.position.set(-5, 38, 9); key.target.position.set(0, 0, 1); }
   key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0003; key.shadow.normalBias = .02; key.shadow.blurSamples = 16;
   key.shadow.camera.near = isHand ? 4 : 18; key.shadow.camera.far = isHand ? 40 : 75; key.shadow.radius = 4;
   sc.add(key, key.target);
-  const hemi = new T3.HemisphereLight(0xb9cad8, 0x2c4a3a, isHand ? .75 : 1.0); sc.add(hemi); if (!isHand) hemiMain = hemi;
-  const fill = new T3.DirectionalLight(0xa9bccd, isHand ? .4 : .3); fill.position.set(10, 8, 14); sc.add(fill);
+  const hemi = new T3.HemisphereLight(0xb9cad8, 0x2c4a3a, isHand ? .35 : .24); sc.add(hemi); if (!isHand) hemiMain = hemi;
+  const fill = new T3.DirectionalLight(0xa9bccd, isHand ? .2 : .18); fill.position.set(10, 8, 14); sc.add(fill);
   return key;
 };
 function buildTable(){
@@ -265,7 +266,7 @@ function buildTable(){
     const m = new T3.Mesh(geo, M.walnut); m.position.set(x, .36, z); m.rotation.y = ry; m.castShadow = m.receiveShadow = true; rail.add(m);
   }
   // brass corner caps where the boards meet
-  for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]){ const m = new T3.Mesh(roundedBox(1.64, .9, 1.64, 2, .2), M.brass); m.position.set(x * 13.95, .37, z * 13.95); m.castShadow = m.receiveShadow = true; rail.add(m); }
+  for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]){ const m = new T3.Mesh(roundedBox(1.64, .9, 1.64, 2, .2), M.brass); m.position.set(x * 13.95, .37, z * 13.95); m.visible = false; rail.add(m); } // v11: plain mitred corners, no brass blocks
   scene.add(rail);
   floor = new T3.Mesh(new T3.PlaneGeometry(400, 400), M.floor); floor.rotation.x = -Math.PI / 2; floor.position.y = -3.5; floor.receiveShadow = true; scene.add(floor);
   // the table's apron, so the rail does not float
@@ -278,7 +279,7 @@ function buildTable(){
     const base = new T3.Mesh(roundedBox(8.6, .24, 1.44, 2, .08), M.brass); base.castShadow = true; base.receiveShadow = true;
     const c = document.createElement('canvas'); c.width = 1024; c.height = 160;
     const tex = new T3.CanvasTexture(c); tex.colorSpace = T3.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    const mat = new T3.MeshPhysicalMaterial({ map: tex, roughness: .5, clearcoat: .6, clearcoatRoughness: .45, envMapIntensity: .35, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0 });
+    const mat = new T3.MeshPhysicalMaterial({ map: tex, roughness: .62, clearcoat: .25, clearcoatRoughness: .5, envMapIntensity: .35, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0 });
     const top = new T3.Mesh(new T3.PlaneGeometry(8.44, 1.3), mat); top.rotation.x = -Math.PI / 2; top.position.y = .122; top.receiveShadow = true;
     g.add(base, top); g.position.set(x, .83, z); g.rotation.order = 'YXZ'; g.rotation.y = (s === 2 ? 0 : s * 90) * DEG; g.visible = false; scene.add(g);
     plaques.push({ g, base, top, c, tex, mat, key: '' });
@@ -313,20 +314,20 @@ function drawPlaque(s){
   const key = [P.shown, w, portrait, on, theme && theme.id, p.name].join();
   if (P.key === key) return; P.key = key;
   const g = P.c.getContext('2d'), a = SEAT[s];
-  // v10: a bone plate set in brass, lettering cut in and inked, the seat's colour only on a small seal
-  g.fillStyle = '#E6DCC6'; g.fillRect(0, 0, 1024, 160);
-  { const gr = g.createLinearGradient(0, 0, 0, 160); gr.addColorStop(0, 'rgba(255,250,238,.35)'); gr.addColorStop(1, 'rgba(120,96,60,.18)'); g.fillStyle = gr; g.fillRect(0, 0, 1024, 160); }
-  for (let i = 0; i < 70; i++){ g.fillStyle = `rgba(140,112,70,${.025 + rand(i * 3 + s * 211) * .03})`; g.fillRect(0, rand(i * 3 + 1 + s * 211) * 160, 1024, 1 + rand(i * 3 + 2 + s * 211) * 2); } // fixed grain: never draws on the game's random numbers
-  g.fillStyle = a.lac; g.fillRect(14, 14, 132, 132);
-  g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(14, 140, 132, 6);
-  g.fillStyle = '#F4EAD5'; g.textBaseline = 'middle'; g.font = "104px TWbrush"; g.textAlign = 'center'; g.fillText(WIND_HAN[w], 80, 84);
-  g.fillStyle = '#1A130C'; g.font = "600 80px TWdisplay"; g.textAlign = 'left'; g.fillText(s === 0 ? 'You' : p.name, 180, 86, 440);
-  g.font = "600 112px TWdisplay"; g.textAlign = 'right'; g.fillText(String(P.shown), 1000, 88);
-  if (on){ g.fillStyle = a.lac; g.fillRect(180, 138, 300, 8); }
-  P.tex.needsUpdate = true; P.mat.emissiveIntensity = on ? .17 : .07; // a touch of self-light so the far plaque still reads
+  // v11: an ebony plate set in brass, the name and score gilded, the seat's colour only on a small lacquer seal
+  g.fillStyle = '#16110D'; g.fillRect(0, 0, 1024, 160);
+  for (let i = 0; i < 60; i++){ g.fillStyle = `rgba(90,62,40,${.05 + rand(i * 3 + s * 211) * .06})`; g.fillRect(0, rand(i * 3 + 1 + s * 211) * 160, 1024, 1 + rand(i * 3 + 2 + s * 211) * 2); } // fixed grain: never draws on the game's random numbers
+  g.strokeStyle = 'rgba(214,180,106,.55)'; g.lineWidth = 3; g.strokeRect(8, 8, 1008, 144);
+  g.fillStyle = a.lac; g.fillRect(22, 22, 116, 116);
+  g.fillStyle = '#F4EAD5'; g.textBaseline = 'middle'; g.font = "92px TWbrush"; g.textAlign = 'center'; g.fillText(WIND_HAN[w], 80, 84);
+  const gold = on ? '#F2D58E' : '#CFAE66';
+  g.fillStyle = gold; g.font = "600 74px TWdisplay"; g.textAlign = 'left'; g.fillText(s === 0 ? 'You' : p.name, 170, 86, 440);
+  g.font = "600 104px TWdisplay"; g.textAlign = 'right'; g.fillText(String(P.shown), 992, 88);
+  if (on){ g.fillStyle = gold; g.fillRect(170, 132, 120, 5); }
+  P.tex.needsUpdate = true; P.mat.emissiveIntensity = s === 0 ? (on ? .1 : .05) : (on ? .42 : .3); // the gilt carries a little self-light so the far plaque still reads under the lamp
 }
 function drawMarker(force){
-  const left = S.wall.length, key = [S.roundWind, S.handNo, S.totalHands, left, S.mode].join();
+  const left = S.wall.length, key = [S.roundWind, S.handNo, S.totalHands, left, S.mode, S.turn === -1].join();
   if (!force && marker.wind != null && marker.wind !== S.roundWind && fixIn > .5 && !reduced()){ if (flipF < 0){ flipF = 0; flipWind = S.roundWind; wake(); } return; }
   if (!force && flipF >= 0 && flipF < .5) return;
   if (marker.key === key) return; marker.key = key; marker.wind = S.roundWind;
@@ -334,8 +335,9 @@ function drawMarker(force){
   g.fillStyle = '#E9DFC8'; g.fillRect(0, 0, 512, 512);
   g.strokeStyle = '#B3261E'; g.lineWidth = 5; g.beginPath(); g.arc(256, 256, 232, 0, 7); g.stroke();
   g.fillStyle = '#B3261E'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = "216px TWbrush"; g.fillText(WIND_HAN[S.roundWind], 256, 180);
-  g.fillStyle = '#2A2117';
-  if (S.totalHands > 1){ g.font = "600 118px TWdisplay"; g.fillText((S.handNo + 1) + '/' + S.totalHands, 256, 380); g.font = "600 44px TWdisplay"; g.globalAlpha = .62; g.fillText('hand', 256, 458); g.globalAlpha = 1; }
+  g.fillStyle = '#2A2117'; // v11: the tiles left in the wall are told here, on the marker, not on a tag over the table
+  if (left > 0 && S.turn !== -1){ g.font = "600 112px TWdisplay"; g.fillText(String(left), 256, 362); g.font = "600 40px TWdisplay"; g.globalAlpha = .62; g.fillText(S.totalHands > 1 ? 'left  \u00b7  hand ' + (S.handNo + 1) + '/' + S.totalHands : 'tiles left', 256, 440); g.globalAlpha = 1; }
+  else if (S.totalHands > 1){ g.font = "600 118px TWdisplay"; g.fillText((S.handNo + 1) + '/' + S.totalHands, 256, 380); g.font = "600 44px TWdisplay"; g.globalAlpha = .62; g.fillText('hand', 256, 458); g.globalAlpha = 1; }
   else { g.font = "600 70px TWdisplay"; g.fillText(['East', 'South', 'West', 'North'][S.roundWind], 256, 392); }
   marker.tex.needsUpdate = true;
 }
@@ -628,7 +630,7 @@ function frame(now){
   // lamps ease toward whoever is to play
   if (Math.abs(warm - warmT) > .004 || Math.abs(turnI - turnIT) > .004 || turnPos.distanceToSquared(turnPosT) > .0004){
     const k = Math.min(1, dt * 5); warm += (warmT - warm) * k; turnI += (turnIT - turnI) * k; turnPos.lerp(turnPosT, k);
-    hspot.color.copy(lampCol).lerp(warmCol, warm * .55); hspot.intensity = 6 + warm * 1.5;
+    hspot.color.copy(lampCol).lerp(warmCol, warm * .55); hspot.intensity = KEY_H + warm * 1.3;
     turnSpot.intensity = turnI * 1.5; turnSpot.target.position.copy(turnPos); turnSpot.position.set(turnPos.x * .8, 26, turnPos.z * .8);
     busy = true;
   }
@@ -648,7 +650,7 @@ function frame(now){
   for (const o of tiles) if (o.pendingHand) busy = true;
   if (fixtures(dt)) busy = true;
   if (!(drag && drag.moved) && (Math.abs(settle) > .0005 || Math.abs(settleV) > .0005)){ settleV += (-140 * settle - 15 * settleV) * dt; settle += settleV * dt; busy = true; } else { settle = 0; settleV = 0; }
-  if (flick > .004){ flick *= Math.exp(-dt * 4.5); spot.intensity = 6.6 * (1 + flick * .22); spot.color.copy(lampCol).lerp(warmCol, Math.min(1, flick * .8)); busy = true; } else if (flick){ flick = 0; spot.intensity = 6.6; spot.color.copy(lampCol); }
+  if (flick > .004){ flick *= Math.exp(-dt * 4.5); spot.intensity = KEY_T * (1 + flick * .22); spot.color.copy(lampCol).lerp(warmCol, Math.min(1, flick * .8)); busy = true; } else if (flick){ flick = 0; spot.intensity = KEY_T; spot.color.copy(lampCol); }
   updateCam(); cam.position.y += settle; cam.updateMatrixWorld();
   const c0 = prof.on ? performance.now() : 0;
   draw();
@@ -998,14 +1000,15 @@ function fixtures(dt){ // plaques sink into the rail, the marker and the dealer'
 
 /* ---------- tables: felt, rail, tile backs and the lamp ---------- */
 /* a new table: the lamp dips, the table changes in the dark, the lamp comes back */
+const RAIL_K = new T3.Color(0xd8c8bc), RACK_K = new T3.Color(0x8a6a58);
 function applyTheme(th, now){
   if (!ok){ theme = th; return; }
   if (!now && !booting && theme && !reduced()){ dipCb = () => applyTheme(th, true); dipT = 1; wake(); return; }
   theme = th;
-  M.felt.color.set(th.felt); M.felt.sheenColor.set(th.sheen);
-  M.walnut.map = th.wood === 'light' ? woodLight : woodDark; M.walnut.color.set(th.rail); M.walnut.needsUpdate = true;
-  M.jade.color.set(cos.back != null ? cos.back : th.back);
-  M.rack.map = cos.light ? M.rackMaps.light : M.rackMaps.dark; M.rack.color.set(cos.tint); M.rack.needsUpdate = true;
+  M.felt.color.set(th.felt).multiplyScalar(.8); M.felt.sheenColor.set(th.sheen).multiplyScalar(.72); // v11: the cloth sits deeper under the lamp
+  M.walnut.map = th.wood === 'light' ? woodLight : woodDark; M.walnut.color.set(th.rail).multiply(RAIL_K); M.walnut.needsUpdate = true;
+  M.jade.color.set(cos.back != null ? cos.back : th.back).multiplyScalar(.68);
+  M.rack.map = cos.light ? M.rackMaps.light : M.rackMaps.dark; M.rack.color.set(cos.tint).multiply(RACK_K); M.rack.needsUpdate = true;
   lampCol.set(cos.lamp != null ? cos.lamp : th.lamp); spot.color.copy(lampCol); hspot.color.copy(lampCol).lerp(warmCol, warm * .55);
   scene.background.set(th.room); scene.fog.color.set(th.room); hemiMain.groundColor.set(th.ground);
   for (const P of plaques) P.key = '';
