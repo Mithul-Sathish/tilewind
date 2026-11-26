@@ -255,6 +255,79 @@ const lightsFor = (sc, isHand) => {
   const fill = new T3.DirectionalLight(0xa9bccd, isHand ? .2 : .18); fill.position.set(10, 8, 14); sc.add(fill);
   return key;
 };
+/* ---------- v12: the room. A wood floor, a rug under the table, paper screens lit from behind on three walls,
+   and a cup of tea on each corner of the rail. Built with Math.random held aside, so the seeded game is untouched. ---------- */
+const quietly = f => { const r = Math.random; let q = 7; Math.random = () => (q = (q * 16807) % 2147483647) / 2147483647; try { return f(); } finally { Math.random = r; } };
+const room = { cups: [], walls: [] };
+function planksTex(){
+  return canvasTex(1024, 1024, (g, w, h) => {
+    const rows = 8, ph = h / rows;
+    for (let r = 0; r < rows; r++){
+      let x = -rand(r * 7.3) * 400;
+      while (x < w){
+        const len = 380 + rand(x * .01 + r * 13.1) * 420, k = r * 31 + Math.round(x);
+        const t = .78 + rand(k * .37) * .3;
+        g.fillStyle = `rgb(${Math.round(70 * t)},${Math.round(46 * t)},${Math.round(30 * t)})`; g.fillRect(x, r * ph, len, ph);
+        for (let i = 0; i < 26; i++){ const yy = r * ph + rand(k + i * 3.1) * ph; g.fillStyle = `rgba(${rand(k + i) > .5 ? '30,18,10' : '120,84,52'},${.08 + rand(k + i * 1.7) * .12})`; g.fillRect(x, yy, len, 1 + rand(k + i * 2.3) * 2.2); }
+        g.fillStyle = 'rgba(10,6,3,.85)'; g.fillRect(x, r * ph, 3, ph); x += len;
+      }
+      g.fillStyle = 'rgba(10,6,3,.9)'; g.fillRect(0, r * ph, w, 3);
+    }
+  });
+}
+function rugTex(){
+  return canvasTex(1024, 1024, (g, w) => {
+    g.fillStyle = '#121725'; g.fillRect(0, 0, w, w);
+    g.fillStyle = '#421611'; g.fillRect(96, 96, w - 192, w - 192);
+    const gold = 'rgba(160,122,64,.7)';
+    g.strokeStyle = gold; g.lineWidth = 3; g.strokeRect(24, 24, w - 48, w - 48); g.strokeRect(96, 96, w - 192, w - 192);
+    // a small key-fret band between the two rules
+    g.lineWidth = 3.5; g.lineCap = 'square';
+    const band = (x0, y0, len, horiz) => { const st = 30; for (let i = 0; i < Math.floor(len / st); i++){ const a = i * st; const P = (u, v) => horiz ? [x0 + a + u, y0 + v] : [x0 + v, y0 + a + u]; g.beginPath(); [[3, 26], [3, 4], [25, 4], [25, 20], [11, 20], [11, 12], [18, 12]].forEach(([u, v], j) => { const [X, Y] = P(u, v); j ? g.lineTo(X, Y) : g.moveTo(X, Y); }); g.stroke(); } };
+    band(46, 44, w - 92, true); band(46, w - 74, w - 92, true); band(44, 76, w - 152, false); band(w - 74, 76, w - 152, false);
+    for (let i = 0; i < 12000; i++){ g.fillStyle = `rgba(${rand(i) > .5 ? '0,0,0' : '255,240,220'},${.03 + rand(i * 1.3) * .05})`; g.fillRect(rand(i * 2.1) * w, rand(i * 3.7) * w, 2, 2); }
+  });
+}
+function shojiTex(){
+  return canvasTex(512, 1024, (g, w, h) => {
+    g.fillStyle = '#E9C88E'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 400; i++){ g.fillStyle = `rgba(150,100,40,${.03 + rand(i * 5.1) * .05})`; g.fillRect(rand(i * 1.9) * w, rand(i * 2.7) * h, 1 + rand(i) * 30, 1); } // paper fibres
+    const lat = '#24170E';
+    g.fillStyle = lat; g.fillRect(0, 0, 26, h); g.fillRect(w - 26, 0, 26, h); g.fillRect(0, 0, w, 26); g.fillRect(0, h - 26, w, 26);
+    for (let i = 1; i < 4; i++) g.fillRect(i * w / 4 - 5, 0, 10, h);
+    for (let j = 1; j < 9; j++) g.fillRect(0, j * h / 9 - 5, w, 10);
+  });
+}
+function buildRoom(){ quietly(() => {
+  const FY = -3.5;
+  // the floor: planks, not a stretched grain
+  const pl = planksTex(); pl.repeat.set(9, 9); M.floor.map = pl; M.floor.color.set(0x9a8a7c); M.floor.roughness = .55; M.floor.needsUpdate = true;
+  const rt = rugTex(); const rug = new T3.Mesh(new T3.PlaneGeometry(64, 64), new T3.MeshStandardMaterial({ map: rt, roughness: 1, color: 0xb8b0a8 }));
+  rug.rotation.x = -Math.PI / 2; rug.position.y = FY + .03; rug.receiveShadow = true; scene.add(rug); room.rug = rug;
+  // three walls of paper screens, lit from the far side, on a dark wooden skirting
+  const st = shojiTex(), D = 40, HGT = 40;
+  const paper = new T3.MeshStandardMaterial({ map: st, emissive: 0xffffff, emissiveMap: st, emissiveIntensity: .55, roughness: .9, color: 0x9a8a78 });
+  const dark = new T3.MeshStandardMaterial({ map: woodDark, color: 0x6a5a50, roughness: .6 });
+  for (const [x, z, ry, len] of [[0, -D, 0, 2 * D], [-D, 0, Math.PI / 2, 2 * D], [D, 0, -Math.PI / 2, 2 * D]]){
+    const g = new T3.Group(); g.position.set(x, FY, z); g.rotation.y = ry;
+    const t = st.clone(); t.needsUpdate = true; t.repeat.set(len / 9, 1);
+    const m = paper.clone(); m.map = t; m.emissiveMap = t;
+    const screen = new T3.Mesh(new T3.PlaneGeometry(len, HGT - 9), m); screen.position.y = 6 + (HGT - 9) / 2; g.add(screen);
+    const skirt = new T3.Mesh(new T3.BoxGeometry(len, 6, 1.2), dark); skirt.position.set(0, 3, .6); g.add(skirt);
+    const beam = new T3.Mesh(new T3.BoxGeometry(len, 3, 1.6), dark); beam.position.set(0, HGT - 1.5, .8); g.add(beam);
+    scene.add(g); room.walls.push(m);
+  }
+  // tea: a celadon cup on each corner of the rail
+  const prof = [[0, 0], [.42, 0], [.46, .05], [.5, .12], [.6, .5], [.66, .78], [.62, .8], [.55, .52], [.44, .14], [0, .14]].map(([x, y]) => new T3.Vector2(x, y));
+  const cupGeo = new T3.LatheGeometry(prof, 40), cel = new T3.MeshPhysicalMaterial({ color: 0x9DB8A0, roughness: .22, clearcoat: 1, clearcoatRoughness: .1, envMapIntensity: .9, side: T3.DoubleSide });
+  const teaM = new T3.MeshPhysicalMaterial({ color: 0x5a2e0c, roughness: .08, clearcoat: 1, transmission: 0, envMapIntensity: 1 });
+  const teaGeo = new T3.CircleGeometry(.56, 32);
+  for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]){
+    const g = new T3.Group(); const c = new T3.Mesh(cupGeo, cel); c.castShadow = true; c.receiveShadow = true;
+    const t = new T3.Mesh(teaGeo, teaM); t.rotation.x = -Math.PI / 2; t.position.y = .58; g.add(c, t);
+    g.position.set(x * 13.95, .77, z * 13.95); g.scale.setScalar(1.05); scene.add(g); room.cups.push(g);
+  }
+}); }
 function buildTable(){
   scene.background = new T3.Color(0x0b0a08); scene.fog = new T3.Fog(0x0b0a08, 70, 150);
   spot = lightsFor(scene, false);
@@ -523,12 +596,12 @@ function placeCam(c, R, tx, tz, ox = 0, oz = 0, tilt = cv.tilt){ c.position.set(
    side players' hidden tiles fall outside the frame); a wide screen shows the whole table; table view looks straight down. */
 function frameBox(aspect){ // in table view a phone zooms onto the four discard grids
   const portrait = aspect < .9;
-  if (mode !== 'game') return { x: 14.7, z0: -14.7, z1: 14.7, frac: portrait ? 1.32 : .84, tilt: portrait ? 30 : aspect > 1.9 ? 40 : 36 }; // a phone: the table runs off the sides, so it fills the screen behind the title
+  if (mode !== 'game') return { x: 14.7, z0: -14.7, z1: 14.7, frac: portrait ? 1.32 : .7, tilt: portrait ? 44 : aspect > 1.9 ? 60 : 58 }; // v12: low enough to see the room behind the table // a phone: the table runs off the sides, so it fills the screen behind the title
   if (S && S.mode === 'lesson') return portrait ? { x: 7.6, z0: -13.5, z1: 10, frac: 1, tilt: 9 } : { x: 10.5, z0: -11, z1: 10, frac: .96, tilt: 16 };
   if (tableView) return portrait ? { x: 7.75, z0: -7.75, z1: 7.75, frac: 1, tilt: .5 } : { x: 10.2, z0: -10.2, z1: 10.2, frac: .98, tilt: .5 };
   if (portrait) return { x: playX, z0: -15.6, z1: 11.4, frac: 1, tilt: 13 }; // v10: as wide as the played tiles reach (7.2 to 9.75), so early tiles read bigger
   if (aspect > 2.2) return { x: 13.6, z0: -12.6, z1: 14.7, frac: 1, tilt: 47 }; // a sideways phone: lower still, so the table uses the width
-  return { x: 14.3, z0: -13.6, z1: 14.9, frac: 1, tilt: aspect > 1.9 ? 38 : 33 }; // v10: lower and closer, like a photograph taken from a chair
+  return { x: 14.3, z0: -13.6, z1: 14.9, frac: 1, tilt: aspect > 1.9 ? 46 : 42 }; // v12: lower, so the far screens of the room show past the table // v10: lower and closer, like a photograph taken from a chair
 }
 function fitCamera(snapNow = true){
   const vh = Math.max(1, H - handH - stripH), aspect = W / vh, b = frameBox(aspect);
@@ -568,14 +641,15 @@ function lookAtSeat(pi){
 function lookHome(){ Object.assign(lookT, LOOK0); lookSeat = 0; wake(); lookChanged(); }
 const lookAway = () => Math.abs(lookT.yaw) > .02 || Math.abs(lookT.tilt) > .01 || Math.abs(lookT.zoom - 1) > .02 || Math.abs(lookT.px) + Math.abs(lookT.pz) > .05;
 function lookChanged(){ if (typeof onLook === 'function') onLook(lookAway(), lookSeat); }
+let homeYaw = 0; // v12: on the title screen the camera drifts slowly around the table
 function updateCam(){
   const g = mode === 'game';
-  const R = cv.R * (1 - pushZoom * push) * (g ? look.zoom : 1), tilt = cv.tilt + (g ? look.tilt : 0), yaw = g ? look.yaw : 0;
+  const R = cv.R * (1 - pushZoom * push) * (g ? look.zoom : 1), tilt = cv.tilt + (g ? look.tilt : 0), yaw = (g ? look.yaw : 0) + homeYaw;
   const tx = cv.tx + pushX * push + (g ? look.px : 0), tz = cv.tz + pushZ * push + (mode === 'home' ? (W < H ? 3.5 : 2.4) : 0) + (g ? look.pz : 0);
   const oz = R * Math.sin(tilt);
   cam.position.set(tx + oz * Math.sin(yaw) + par.x, R * Math.cos(tilt), tz + oz * Math.cos(yaw) + par.z);
   cam.lookAt(tx, 0, tz); cam.updateMatrixWorld();
-  if (scene.fog){ scene.fog.near = R + 22; scene.fog.far = R + 110; } // only the room past the table falls into the dark
+  if (scene.fog){ scene.fog.near = R + 45; scene.fog.far = R + 175; } // only the room past the table falls into the dark
 }
 function fitHand(){
   if (!handH){ return; }
@@ -651,6 +725,8 @@ function frame(now){
   if (fixtures(dt)) busy = true;
   if (!(drag && drag.moved) && (Math.abs(settle) > .0005 || Math.abs(settleV) > .0005)){ settleV += (-140 * settle - 15 * settleV) * dt; settle += settleV * dt; busy = true; } else { settle = 0; settleV = 0; }
   if (flick > .004){ flick *= Math.exp(-dt * 4.5); spot.intensity = KEY_T * (1 + flick * .22); spot.color.copy(lampCol).lerp(warmCol, Math.min(1, flick * .8)); busy = true; } else if (flick){ flick = 0; spot.intensity = KEY_T; spot.color.copy(lampCol); }
+  const drift = mode === 'home' && !reduced() && !window.TW_fast && !document.hidden;
+  { const tgt = drift ? Math.sin(now / 11000) * (W < H ? .12 : .3) : 0, d = tgt - homeYaw; if (Math.abs(d) > .0004){ homeYaw += d * Math.min(1, dt * (drift ? 3 : 2.4)); if (!drift) busy = true; } else homeYaw = tgt; }
   updateCam(); cam.position.y += settle; cam.updateMatrixWorld();
   const c0 = prof.on ? performance.now() : 0;
   draw();
@@ -660,7 +736,7 @@ function frame(now){
   if (busy && !window.TW_fast && raw < 120){
     if (qSkip > 0) qSkip--; else { qSum += raw; qN++; if (qN >= 50){ const avg = qSum / qN; qSum = 0; qN = 0; if (avg > 21 && window.TW_auto !== false){ if (tier > 0){ tier--; applyTier(); } else if (lowStep < 2){ lowStep++; applyTier(); } qSkip = 40; } } }
   }
-  if (busy || needFrame){ needFrame = false; requestAnimationFrame(frame); }
+  if (busy || needFrame || drift){ needFrame = false; requestAnimationFrame(frame); }
   else running = false;
   if (labelsDirty || busy) positionLabels();
 }
@@ -1005,7 +1081,7 @@ function applyTheme(th, now){
   if (!ok){ theme = th; return; }
   if (!now && !booting && theme && !reduced()){ dipCb = () => applyTheme(th, true); dipT = 1; wake(); return; }
   theme = th;
-  M.felt.color.set(th.felt).multiplyScalar(.8); M.felt.sheenColor.set(th.sheen).multiplyScalar(.72); // v11: the cloth sits deeper under the lamp
+  M.felt.color.set(th.felt).multiplyScalar(.58); M.felt.sheenColor.set(th.sheen).multiplyScalar(.5); // v11: the cloth sits deeper under the lamp
   M.walnut.map = th.wood === 'light' ? woodLight : woodDark; M.walnut.color.set(th.rail).multiply(RAIL_K); M.walnut.needsUpdate = true;
   M.jade.color.set(cos.back != null ? cos.back : th.back).multiplyScalar(.68);
   M.rack.map = cos.light ? M.rackMaps.light : M.rackMaps.dark; M.rack.color.set(cos.tint).multiply(RACK_K); M.rack.needsUpdate = true;
@@ -1202,7 +1278,7 @@ async function init(host){
   const pm = new T3.PMREMGenerator(renderer);
   const env = pm.fromScene(roomEnv(), .04).texture; scene.environment = env; hscene.environment = env;
   performance.mark('tw-env'); await tick(86);
-  buildTable(); buildRack(); buildTiles();
+  buildTable(); buildRoom(); buildRack(); buildTiles();
   performance.mark('tw-build'); await tick(94);
   ok = true; applyTier(); performance.mark('tw-tier');
   window.addEventListener('pointermove', e => { if (e.pointerType !== 'mouse') return; if (mode === 'game'){ if (par.tx || par.tz){ par.tx = 0; par.tz = 0; wake(); } return; } par.tx = (e.clientX / W - .5) * -.35; par.tz = (e.clientY / H - .5) * -.22; wake(); });
